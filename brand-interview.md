@@ -30,7 +30,7 @@
 6. **Color preferences?**
    - Any colors you love or hate?
    - Industry conventions to follow or break?
-   - Light mode only, dark mode only, or both?
+   - Light + dark mode are always supported (system default). Any palette preferences for each?
 7. **Typography vibe?**
    - Modern/geometric vs classic/serif?
    - Playful vs professional?
@@ -127,9 +127,23 @@ After the interview, create this file in the project:
 ## Typography
 
 ### Font Stack
-- **Display/Headings:** [Font name]
-- **Body:** [Font name]
+- **Display/Headings:** [Font name] → `--font-heading` in `@theme`
+- **Body:** [Font name] → `--font-body` in `@theme`
 - **Monospace:** [Font name]
+
+### Font Loading
+
+Load fonts from Google Fonts or local files. Add the `<link>` in the HTML head, then set the `@theme` tokens:
+
+```css
+/* Example: Different heading and body fonts */
+@theme {
+  --font-heading: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+```
+
+Headings (`h1`–`h6`) automatically use `font-heading`. Everything else uses `font-body`. To override inline, use `className="font-heading"` or `className="font-body"`.
 
 ### Type Scale
 | Element | Size | Weight | Font |

@@ -23,7 +23,9 @@ fi
 TSX_FILES=$(echo "$FILES" | grep '\.tsx$' || true)
 TS_FILES=$(echo "$FILES" | grep '\.ts$' || true)
 ALL_TS=$(echo -e "${TSX_FILES}\n${TS_FILES}" | sed '/^$/d' || true)
+CSS_FILES=$(echo "$FILES" | grep '\.css$' || true)
 RB_FILES=$(echo "$FILES" | grep '\.rb$' || true)
+YML_FILES=$(echo "$FILES" | grep -E '(config/locales|app/frontend/locales)/.*\.yml$' || true)
 
 FAILURES=0
 PASSES=0
@@ -50,7 +52,7 @@ check() {
 # ─── Linters (universal) ────────────────────────────────
 
 if [ -n "$ALL_TS" ]; then
-  ESLINT_OUT=$(echo "$ALL_TS" | xargs npx eslint --no-warn-ignored 2>&1 || true)
+  ESLINT_OUT=$(echo "$ALL_TS" | xargs bunx eslint --no-warn-ignored 2>&1 || true)
   if echo "$ESLINT_OUT" | grep -q "error"; then
     check "ESLint" "FAIL" "$ESLINT_OUT"
   else
@@ -60,8 +62,35 @@ else
   check "ESLint (no .ts/.tsx files)" "PASS"
 fi
 
+FORMAT_FILES=""
+if [ -n "$ALL_TS" ]; then FORMAT_FILES="$ALL_TS"; fi
+if [ -n "$CSS_FILES" ]; then FORMAT_FILES=$(echo -e "${FORMAT_FILES}\n${CSS_FILES}" | sed '/^$/d'); fi
+if [ -n "$YML_FILES" ]; then FORMAT_FILES=$(echo -e "${FORMAT_FILES}\n${YML_FILES}" | sed '/^$/d'); fi
+
+if [ -n "$FORMAT_FILES" ]; then
+  PRETTIER_OUT=$(echo "$FORMAT_FILES" | xargs bunx prettier --check 2>&1 || true)
+  if echo "$PRETTIER_OUT" | grep -qE "\[warn\]"; then
+    check "Prettier" "FAIL" "$PRETTIER_OUT"
+  else
+    check "Prettier" "PASS"
+  fi
+else
+  check "Prettier (no formattable files)" "PASS"
+fi
+
+if [ -n "$CSS_FILES" ]; then
+  STYLELINT_OUT=$(echo "$CSS_FILES" | xargs bunx stylelint 2>&1 || true)
+  if echo "$STYLELINT_OUT" | grep -qE "✖|error"; then
+    check "Stylelint" "FAIL" "$STYLELINT_OUT"
+  else
+    check "Stylelint" "PASS"
+  fi
+else
+  check "Stylelint (no .css files)" "PASS"
+fi
+
 if [ -n "$ALL_TS" ]; then
-  TSC_OUT=$(npx tsc --noEmit 2>&1 || true)
+  TSC_OUT=$(bunx tsc --noEmit 2>&1 || true)
   TSC_RELEVANT=""
   for f in $ALL_TS; do
     MATCH=$(echo "$TSC_OUT" | grep "^$f" || true)
@@ -89,6 +118,17 @@ if [ -n "$RB_FILES" ]; then
   fi
 else
   check "RuboCop (no .rb files)" "PASS"
+fi
+
+if [ -n "$YML_FILES" ]; then
+  YAMLLINT_OUT=$(echo "$YML_FILES" | xargs yamllint -f parsable 2>&1 || true)
+  if echo "$YAMLLINT_OUT" | grep -qE "\[error\]"; then
+    check "yamllint" "FAIL" "$YAMLLINT_OUT"
+  else
+    check "yamllint" "PASS"
+  fi
+else
+  check "yamllint (no locale .yml files)" "PASS"
 fi
 
 # ─── Design System Checks (.tsx) — CUSTOMIZE per project ─

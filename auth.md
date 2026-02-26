@@ -1,12 +1,12 @@
-# Authentication - Rails 8 + OmniAuth
+# Authentication - Rails + OmniAuth
 
-> Rails 8 authentication generator + OmniAuth for social login.
+> Rails authentication generator + OmniAuth for social login.
 
 ---
 
 ## Overview
 
-Rails 8 includes a built-in authentication generator that provides:
+Rails includes a built-in authentication generator that provides:
 - Session-based authentication (no JWT)
 - `has_secure_password` for email/password login
 - `Current.user` pattern for accessing authenticated user
@@ -16,7 +16,7 @@ We extend this with OmniAuth for social login (Google, OpenAI, etc.).
 
 ---
 
-## Step 1: Generate Rails 8 Auth
+## Step 1: Generate Rails Auth
 
 ```bash
 bin/rails generate authentication
@@ -30,6 +30,72 @@ This creates:
 - `app/controllers/sessions_controller.rb`
 - `app/controllers/passwords_controller.rb`
 - Database migrations for users and sessions
+
+---
+
+## Step 2: Add User Handle
+
+Users can claim a unique, URL-friendly handle (e.g. `@janedoe`). The handle is optional at signup and can be claimed later from settings.
+
+### Migration
+
+```ruby
+# db/migrate/YYYYMMDDHHMMSS_add_handle_to_users.rb
+
+class AddHandleToUsers < ActiveRecord::Migration[x.x]
+  def change
+    add_column :users, :handle, :string
+    add_index :users, :handle, unique: true
+  end
+end
+```
+
+### Handle Rules
+
+- **Format:** lowercase letters, numbers, hyphens, underscores. Must start and end with a letter or number.
+- **Length:** 3–30 characters
+- **Uniqueness:** enforced at DB level (unique index) and application level
+- **Normalization:** auto-downcased and stripped
+- **Reserved words:** block handles like `admin`, `staff`, `api`, `settings`, `app`, `billing`, `login`, `signup`, `contact`, `support`, `help`, etc. to prevent route collisions
+
+### Reserved Handle Check
+
+```ruby
+# In a validation interactor
+RESERVED_HANDLES = %w[
+  admin staff api app settings billing login signup logout
+  contact support help pricing about terms privacy
+  new edit delete create update destroy
+].freeze
+
+def call
+  if RESERVED_HANDLES.include?(context.handle)
+    context.fail!(error: I18n.t("errors.handle_reserved"))
+  end
+end
+```
+
+### Handle Availability Endpoint
+
+Provide a lightweight endpoint for real-time availability checking:
+
+```ruby
+# app/controllers/api/v1/handles_controller.rb
+class Api::V1::HandlesController < ApplicationController
+  allow_unauthenticated_access
+
+  def check
+    handle = params[:handle]&.strip&.downcase
+    available = handle.present? &&
+                handle.match?(/\A[a-z0-9][a-z0-9_-]*[a-z0-9]\z/) &&
+                handle.length.between?(3, 30) &&
+                !RESERVED_HANDLES.include?(handle) &&
+                !User.exists?(handle: handle)
+
+    render json: { available: }
+  end
+end
+```
 
 ---
 
@@ -48,8 +114,12 @@ class User < ApplicationRecord
   # Validations
   validates :email_address, presence: true, uniqueness: true
   validates :password, length: { minimum: 8 }, allow_nil: true
+  validates :handle, uniqueness: true, allow_nil: true,
+    format: { with: /\A[a-z0-9][a-z0-9_-]*[a-z0-9]\z/, message: I18n.t("errors.handle_format") },
+    length: { minimum: 3, maximum: 30 }
 
   normalizes :email_address, with: ->(e) { e.strip.downcase }
+  normalizes :handle, with: ->(h) { h.strip.downcase }
 
   def full_name
     [first_name, last_name].compact.join(" ").presence || email_address.split("@").first
@@ -141,6 +211,7 @@ class OauthController < ApplicationController
     user = User.find_or_create_from_oauth(auth)
 
     start_new_session_for(user)
+    set_last_login_method(auth.provider)  # "Last used" indicator
     redirect_to after_login_path, notice: "Welcome, #{user.first_name}!"
   end
 
@@ -251,11 +322,224 @@ end
 
 ## Key Points
 
-1. **No JWT** — Rails 8 uses cookie-based sessions
+1. **No JWT** — Rails uses cookie-based sessions
 2. **Optional password** — OAuth users don't need a password
 3. **`Current.user`** — Access authenticated user anywhere
 4. **Session tracking** — Each login creates a Session record
 5. **`allow_unauthenticated_access`** — Explicitly mark public actions
+
+---
+
+## "Last Used" Login Method (OAuth only)
+
+When the app has OAuth, show a "Last used" badge on the login form so returning users instantly see which method they used last time. The indicator is stored in a long-lived, non-sensitive cookie — **only implement this when OAuth is enabled** (it's pointless with email/password only).
+
+### Authentication Concern
+
+Add a helper to set the cookie on every successful login (both password and OAuth):
+
+```ruby
+# app/controllers/concerns/authentication.rb (add to existing)
+
+LAST_LOGIN_METHOD_COOKIE = :last_login_method
+
+private
+
+def set_last_login_method(method)
+  # method: "password", "google_oauth2", "openai", etc.
+  cookies.permanent[LAST_LOGIN_METHOD_COOKIE] = {
+    value: method,
+    httponly: true,
+    same_site: :lax
+  }
+end
+
+def last_login_method
+  cookies[LAST_LOGIN_METHOD_COOKIE]
+end
+```
+
+### Set on Password Login
+
+```ruby
+# app/controllers/sessions_controller.rb
+
+def create
+  user = User.authenticate_by(
+    email_address: params[:email],
+    password: params[:password]
+  )
+
+  if user
+    start_new_session_for(user)
+    set_last_login_method("password")  # Track login method
+    redirect_to after_login_path
+  else
+    redirect_to login_path, alert: I18n.t("auth.invalid_credentials")
+  end
+end
+```
+
+### Pass to Login Page
+
+```ruby
+# app/controllers/sessions_controller.rb
+
+def new
+  render inertia: "Auth/Login", props: {
+    last_login_method: last_login_method,  # nil, "password", "google_oauth2", etc.
+    oauth_providers: enabled_oauth_providers
+  }
+end
+
+private
+
+def enabled_oauth_providers
+  providers = []
+  providers << { key: "google_oauth2", name: "Google" } if ENV["GOOGLE_CLIENT_ID"].present?
+  # providers << { key: "openai", name: "OpenAI" } if ENV["OPENAI_CLIENT_ID"].present?
+  providers
+end
+```
+
+### Login Page with "Last Used" Badge
+
+```jsx
+// app/frontend/pages/Auth/Login.jsx
+
+import { Head, useForm, usePage } from "@inertiajs/react";
+import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+
+function LastUsedBadge({ method, current }) {
+  const { t } = useTranslation();
+  if (method !== current) return null;
+
+  return (
+    <Badge variant="secondary" className="ml-2 text-xs font-normal">
+      {t("auth.last_used")}
+    </Badge>
+  );
+}
+
+export default function Login({ last_login_method, oauth_providers }) {
+  const { t } = useTranslation();
+  const { routes } = usePage().props;
+  const { data, setData, post, processing } = useForm({
+    email: "",
+    password: "",
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    post(routes.login);
+  };
+
+  return (
+    <>
+      <Head title={t("auth.login_title")} />
+
+      <div className="max-w-sm mx-auto py-12 px-4">
+        <h1 className="text-2xl font-bold text-center mb-6">
+          {t("auth.login_title")}
+        </h1>
+
+        {/* OAuth buttons */}
+        {oauth_providers.length > 0 && (
+          <div className="space-y-2 mb-6">
+            {oauth_providers.map((provider) => (
+              <form
+                key={provider.key}
+                action={`/auth/${provider.key}`}
+                method="post"
+                className="w-full"
+              >
+                <input
+                  type="hidden"
+                  name="authenticity_token"
+                  value={document.querySelector('meta[name="csrf-token"]')?.content}
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="w-full justify-center"
+                >
+                  {t(`auth.continue_with`, { provider: provider.name })}
+                  <LastUsedBadge
+                    method={last_login_method}
+                    current={provider.key}
+                  />
+                </Button>
+              </form>
+            ))}
+
+            <div className="relative my-4">
+              <Separator />
+              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background text-muted-foreground text-xs px-2">
+                {t("auth.or")}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Email/password form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <div className="flex items-center">
+              <Label htmlFor="email">{t("auth.email")}</Label>
+              <LastUsedBadge method={last_login_method} current="password" />
+            </div>
+            <Input
+              id="email"
+              type="email"
+              value={data.email}
+              onChange={(e) => setData("email", e.target.value)}
+              autoComplete="email"
+              autoFocus={last_login_method === "password" || !last_login_method}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="password">{t("auth.password")}</Label>
+            <Input
+              id="password"
+              type="password"
+              value={data.password}
+              onChange={(e) => setData("password", e.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+
+          <Button type="submit" disabled={processing} className="w-full">
+            {t("auth.login")}
+          </Button>
+        </form>
+      </div>
+    </>
+  );
+}
+```
+
+### i18n Keys
+
+```yaml
+# app/frontend/locales/en/auth.yml (merge with existing)
+auth:
+  last_used: Last used
+  continue_with: "Continue with {{provider}}"
+  or: or
+```
+
+### Notes
+
+1. **Cookie is `httponly`** — not accessible via JavaScript, only the server reads it and passes it as a prop.
+2. **Cookie is permanent** — survives browser restarts. Non-sensitive (just a method name like `"google_oauth2"`).
+3. **`autoFocus` hint** — the email input auto-focuses when the last method was password (or first visit). When the last method was OAuth, the OAuth button is visually highlighted with the badge instead.
+4. **Skip entirely without OAuth** — if `oauth_providers` is empty, the separator, "or" divider, and "Last used" badge logic are all irrelevant and hidden.
 
 ---
 

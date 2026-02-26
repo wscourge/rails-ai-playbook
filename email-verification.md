@@ -1,12 +1,12 @@
 # Email Verification & Password Reset
 
-> Transactional email setup for Rails 8 authentication.
+> Transactional email setup for Rails authentication.
 
 ---
 
 ## Overview
 
-Rails 8 authentication generator includes:
+Rails authentication generator includes:
 - Password reset flow
 - Email verification (optional)
 
@@ -318,7 +318,7 @@ end
 
 ```ruby
 # db/migrate/xxx_add_email_verification_to_users.rb
-class AddEmailVerificationToUsers < ActiveRecord::Migration[8.0]
+class AddEmailVerificationToUsers < ActiveRecord::Migration[x.x]
   def change
     add_column :users, :email_verified_at, :datetime
   end

@@ -14,12 +14,15 @@ Ask the user:
 2. **Do you have Google Search Console set up?**
    - Will need to verify domain ownership
 
-3. **What's the site description?** (for meta tags)
+3. **Do you have an Ahrefs account?**
+   - Need the verification meta tag content value
+
+4. **What's the site description?** (for meta tags)
    - 150-160 characters for optimal SEO
 
-4. **What are the target keywords?**
+5. **What are the target keywords?**
 
-5. **Do you have social sharing images?**
+6. **Do you have social sharing images?**
    - OG image (1200x630)
    - Twitter card image
 
@@ -87,6 +90,36 @@ public/google[VERIFICATION_CODE].html
 After verification:
 1. Go to Sitemaps in Search Console
 2. Submit: `https://yourdomain.com/sitemap.xml`
+
+---
+
+## Ahrefs Verification
+
+### Setup
+
+1. Go to https://ahrefs.com → Site Audit / Site Explorer
+2. Add your domain
+3. Choose "HTML tag" verification method
+4. Copy the content value from the meta tag
+
+### Environment Variable
+
+```bash
+# .env
+AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
+```
+
+### Add to Layout
+
+```erb
+<!-- app/views/layouts/application.html.erb -->
+<head>
+  <%# Ahrefs Verification %>
+  <% if ENV['AHREFS_VERIFICATION'].present? %>
+    <meta name="ahrefs-site-verification" content="<%= ENV['AHREFS_VERIFICATION'] %>">
+  <% end %>
+</head>
+```
 
 ---
 
@@ -252,6 +285,7 @@ Add to layout for rich search results:
 ```bash
 # .env
 GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
+AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
 
 # For sitemap generation in production
 RAILS_HOST=yourdomain.com
@@ -263,6 +297,7 @@ RAILS_HOST=yourdomain.com
 
 - [ ] Google Analytics 4 installed
 - [ ] Google Search Console verified
+- [ ] Ahrefs verified
 - [ ] Sitemap generated and submitted
 - [ ] robots.txt in place
 - [ ] Default meta tags in layout

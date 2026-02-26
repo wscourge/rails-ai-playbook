@@ -19,11 +19,11 @@ This is the system I use to build Rails applications with Claude Code. It gives 
 ### Stack-Specific Guides
 | File | What It Does |
 |------|-------------|
-| [auth.md](auth.md) | Rails 8 authentication + OmniAuth |
+| [auth.md](auth.md) | Rails authentication + OmniAuth |
 | [inertia-react.md](inertia-react.md) | Inertia + React + Vite + shadcn/ui + frontend philosophy |
 | [solid-stack.md](solid-stack.md) | Solid Queue/Cache/Cable (single database) |
 | [stripe-payments.md](stripe-payments.md) | Stripe CLI workflow + Pay gem |
-| [heroku-deploy.md](heroku-deploy.md) | Deployment checklist + Procfile |
+| [kamal-deploy.md](kamal-deploy.md) | Kamal deployment on Hetzner Cloud |
 
 ### Quality & Standards (copy to each project)
 | File | What It Does |
@@ -89,15 +89,15 @@ This playbook is opinionated. It assumes:
 
 | Layer | Technology |
 |-------|------------|
-| **Server** | Rails 8 + PostgreSQL |
+| **Server** | Rails + PostgreSQL |
 | **Frontend** | Inertia.js + React + Vite |
-| **Styling** | Tailwind v4 + shadcn/ui |
-| **Auth** | Rails 8 sessions (+ optional OAuth) |
+| **Styling** | Tailwind + shadcn/ui |
+| **Auth** | Rails sessions (+ optional OAuth) |
 | **Payments** | Stripe via Pay gem |
 | **Jobs** | Solid Queue (single DB) |
 | **Cache** | Solid Cache (single DB) |
 | **Email** | Resend (prod) / letter_opener (dev) |
-| **Hosting** | Heroku |
+| **Hosting** | Kamal + Hetzner Cloud |
 
 If your stack is different, the structural patterns (living docs, quality hooks, interview-first workflow) still apply — you'd just swap out the stack-specific guides.
 
@@ -121,7 +121,7 @@ The playbook is structured so you can swap pieces:
 
 - **Not using Inertia?** Replace `inertia-react.md` with your frontend patterns (Hotwire, API+SPA, etc.)
 - **Not using Stripe?** Remove `stripe-payments.md`, swap in your payment provider
-- **Not using Heroku?** Replace `heroku-deploy.md` with your deployment target
+- **Not using Kamal/Hetzner?** Replace `kamal-deploy.md` with your deployment target
 - **Not using Rails?** The quality principles, testing guidelines, interview workflow, and living docs pattern work with any framework
 
 The core value isn't the specific technologies — it's the system of structured documentation, automated enforcement, and interview-driven project setup.

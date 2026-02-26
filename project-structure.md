@@ -11,7 +11,7 @@ Every new project should have:
 ```
 my-app/
 ├── CLAUDE.md                    # Brief index, links to docs/
-├── README.md                    # Project overview for humans
+├── README.md                    # Dev + prod setup, third-party services, env vars
 ├── .env.example                 # Required ENV vars
 ├── .claude/
 │   └── hooks/
@@ -34,7 +34,7 @@ my-app/
 ```markdown
 # [App Name] - Claude Playbook
 
-> Instructions for working on this Rails + Inertia + Vite + Tailwind v4 project.
+> Instructions for working on this Rails + Inertia + Vite + Tailwind project.
 
 **Project Docs:**
 - [Schema](docs/SCHEMA.md) - Every table, column, relationship, and index
@@ -52,14 +52,21 @@ my-app/
 
 | Layer | Technology |
 |-------|------------|
-| Server | Rails 8 + PostgreSQL |
+| Server | Rails + PostgreSQL |
 | Frontend | Inertia + React + Vite |
-| Styling | Tailwind v4 + shadcn/ui |
-| Auth | Rails 8 sessions [+ Google OAuth] |
+| Styling | Tailwind + shadcn/ui |
+| Auth | Rails sessions [+ Google OAuth] |
 | Payments | Stripe via Pay gem |
 | Jobs | Solid Queue |
 | Email | Resend (prod) / letter_opener (dev) |
-| Hosting | Heroku |
+| Testing (Ruby) | RSpec + FactoryBot + FFaker |
+| Testing (JS) | Jest (logic only) |
+| CSS Linting | Stylelint |
+| Package Manager (JS) | Bun |
+| Business Logic | Interactor gem |
+| Error Tracking | Sentry |
+| i18n | Rails I18n + react-i18next |
+| Hosting | Kamal |
 
 ---
 
@@ -68,14 +75,20 @@ my-app/
 ### Commands
 \`\`\`bash
 bin/dev              # Start dev server
-bin/rails test       # Run tests
+bundle exec rspec    # Run Ruby tests
+bun test             # Run JS tests (Jest)
+bun stylelint "app/frontend/**/*.css"  # Lint CSS
+bundle exec rspec spec/interactors/  # Run interactor tests
 bin/rails console    # Rails console
 \`\`\`
 
 ### Key Paths
 - Pages: `app/frontend/pages/`
 - Components: `app/frontend/components/`
-- Services: `app/services/`
+- Interactors: `app/interactors/`
+- Locales (Ruby): `config/locales/`
+- Locales (React): `app/frontend/locales/`
+- Validators (JS): `app/frontend/lib/validators.ts`
 - Styles: `app/frontend/entrypoints/application.css`
 
 ### Conventions
@@ -83,12 +96,16 @@ bin/rails console    # Rails console
 - Routes: Always use shared routes from `usePage().props.routes`
 - Icons: Lucide React only
 - Components: shadcn/ui
-- Colors: Tailwind v4 tokens (`bg-background`, not `bg-white`)
-- Business logic: Always in `app/services/`, never in controllers or models
+- Colors: Tailwind tokens (`bg-background`, not `bg-white`)
+- Business logic: Always in `app/interactors/`, never in controllers or models
+- Validation (backend): In `Validate*` interactors, not model validations
+- Validation (frontend): Zod schemas, validate before sending request
+- i18n: `I18n.t()` in Ruby, `useTranslation()` in React — no hardcoded English
+- Class methods: `class << self` block, never `self.method_name`
 - Timestamps: Stored UTC, displayed in user's timezone via `Time.use_zone`
 
 ### Frontend Design
-When building pages, components, or layouts, use the `/frontend-design` skill to generate distinctive, production-grade UI. Avoids generic AI aesthetics and uses the project's design system (Tailwind v4 + shadcn/ui).
+When building pages, components, or layouts, use the `/frontend-design` skill to generate distinctive, production-grade UI. Avoids generic AI aesthetics and uses the project's design system (Tailwind + shadcn/ui).
 
 ---
 
@@ -133,10 +150,11 @@ Use these for research and validation:
 
 ## Prerequisites
 
-- Ruby 3.3+
-- Node.js 20+
-- PostgreSQL 15+
-- Heroku CLI (for deployment)
+- Ruby (latest stable)
+- Node.js (latest LTS)
+- PostgreSQL (latest stable)
+- Docker Desktop (for Kamal deployment)
+- Kamal (`gem install kamal`)
 - Stripe CLI (for webhook testing)
 
 ---
@@ -149,7 +167,7 @@ Use these for research and validation:
 git clone [repo-url]
 cd [app-name]
 bundle install
-npm install
+bun install
 \`\`\`
 
 ### 2. Environment Setup
@@ -179,14 +197,23 @@ bin/dev
 ## Testing
 
 \`\`\`bash
-# Run all tests
-bin/rails test
+# Run all Ruby tests
+bundle exec rspec
 
-# Run specific test file
-bin/rails test test/models/user_test.rb
+# Run specific spec file
+bundle exec rspec spec/interactors/users/create_user_spec.rb
 
 # Run specific test
-bin/rails test test/models/user_test.rb:42
+bundle exec rspec spec/interactors/users/create_user_spec.rb:42
+
+# Run JS tests
+bun test
+
+# Run JS tests in watch mode
+bun run test:watch
+
+# Lint CSS
+bun stylelint "app/frontend/**/*.css"
 \`\`\`
 
 ---
@@ -205,26 +232,33 @@ stripe trigger customer.subscription.created
 
 ## Deployment
 
-### Heroku
+### Kamal (Hetzner)
 
 \`\`\`bash
-# Deploy
-git push heroku main
+# First deploy (bootstraps servers)
+kamal setup
 
-# Run migrations (auto via release phase)
+# Subsequent deploys
+kamal deploy
+
+# Migrations run automatically via docker-entrypoint
 # Manual if needed:
-heroku run rails db:migrate
+kamal app exec "bin/rails db:migrate"
 
 # View logs
-heroku logs --tail
+kamal app logs -f
 \`\`\`
 
 ### Environment Variables
 
-See `.env.example` for required vars. Set on Heroku:
+See `.env.example` for required vars. Production secrets go in `.kamal/secrets`:
 
 \`\`\`bash
-heroku config:set KEY=value
+# Edit .kamal/secrets (never committed)
+vim .kamal/secrets
+
+# Push env changes without redeploying
+kamal env push
 \`\`\`
 
 ---
@@ -235,7 +269,7 @@ heroku config:set KEY=value
 bin/rails console          # Rails console
 bin/rails routes           # List routes
 bin/rails db:rollback      # Undo last migration
-heroku run rails console   # Production console
+kamal app exec -i "bin/rails console"   # Production console
 \`\`\`
 ```
 
@@ -273,8 +307,8 @@ Project
 
 ## Key Services
 
-| Service | Purpose |
-|---------|---------|
+| Interactor | Purpose |
+|------------|---------|
 | PlansService | Centralized plan/pricing config |
 | [Service] | [Purpose] |
 
@@ -284,7 +318,7 @@ Project
 
 1. User signs up (email/password or Google OAuth)
 2. Email verification sent
-3. Session created via Rails 8 auth
+3. Session created via Rails auth
 4. JWT not used - cookie-based sessions
 
 ---
@@ -383,10 +417,10 @@ Ideas for future consideration:
 ## Completed
 
 ### Phase 0: Foundation
-- [x] Rails 8 setup
+- [x] Rails setup
 - [x] Auth (email + Google)
 - [x] Stripe payments
-- [x] Heroku deployment
+- [x] Kamal deployment
 ```
 
 ---
@@ -406,20 +440,113 @@ Ideas for future consideration:
 
 ## Tech Stack
 
-- Rails 8 + PostgreSQL
+- Rails + PostgreSQL
 - Inertia + React + Vite
-- Tailwind v4 + shadcn/ui
+- Tailwind + shadcn/ui
 - Stripe payments
-- Heroku hosting
+- Kamal + Hetzner hosting
 
-## Getting Started
+---
 
-See [docs/PROJECT_SETUP.md](docs/PROJECT_SETUP.md) for setup instructions.
+## Development Setup
+
+### Prerequisites
+
+- Ruby (latest stable)
+- PostgreSQL (latest stable)
+- Bun (latest stable)
+- Stripe CLI (for webhook testing)
+
+### Steps
+
+\`\`\`bash
+git clone [repo-url]
+cd [app-name]
+bundle install
+bun install
+cp .env.example .env    # Edit with your values
+bin/rails db:setup
+bin/dev                  # http://localhost:3000
+\`\`\`
+
+### Third-Party Services (Development)
+
+| Service | What to do | Env var(s) |
+|---------|-----------|------------|
+| [Stripe](https://dashboard.stripe.com/test/apikeys) | Create test-mode API keys | `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY` |
+| [Stripe CLI](https://docs.stripe.com/stripe-cli) | `stripe listen --forward-to localhost:3000/webhooks/stripe` | `STRIPE_WEBHOOK_SECRET` (printed by CLI) |
+| [Google Cloud Console](https://console.cloud.google.com/apis/credentials) | Create OAuth 2.0 credentials (redirect: `http://localhost:3000/auth/google_oauth2/callback`) | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| [Resend](https://resend.com) | Not needed locally — uses `letter_opener_web` | — |
+| [Sentry](https://sentry.io) | Optional for dev — create a project if you want error tracking | `SENTRY_DSN` |
+
+> Add/remove rows based on the project's actual integrations.
+
+---
+
+## Production Setup
+
+### Infrastructure
+
+1. **Hetzner Cloud** — Provision servers (web + db), configure firewall and private network. See [kamal-deploy.md](docs links) for full steps.
+2. **PostgreSQL** — Install on db server, create database and user, allow private-network connections.
+3. **Docker Hub** — Create account + access token for container registry.
+4. **Domain** — Point DNS A records to web server IP.
+
+### Third-Party Services (Production)
+
+| Service | What to do | Env var(s) |
+|---------|-----------|------------|
+| [Stripe](https://dashboard.stripe.com/apikeys) | Switch to **live-mode** API keys | `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY` |
+| [Stripe Webhooks](https://dashboard.stripe.com/webhooks) | Add endpoint `https://[domain]/webhooks/stripe` | `STRIPE_WEBHOOK_SECRET` |
+| [Google Cloud Console](https://console.cloud.google.com/apis/credentials) | Add production redirect URI: `https://[domain]/auth/google_oauth2/callback` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| [Resend](https://resend.com) | Verify sending domain, create production API key | `RESEND_API_KEY` |
+| [Sentry](https://sentry.io) | Create project, grab DSN | `SENTRY_DSN` |
+| [Docker Hub](https://hub.docker.com/settings/security) | Create access token | `KAMAL_REGISTRY_PASSWORD` |
+
+> Add/remove rows based on the project's actual integrations.
+
+### Secrets
+
+All production secrets go in `.kamal/secrets` (never committed) and are mirrored as GitHub repository secrets for CI/CD:
+
+\`\`\`bash
+# Local (Kamal reads from this file)
+vim .kamal/secrets
+
+# GitHub (for GitHub Actions auto-deploy)
+gh secret set SECRET_NAME
+gh secret list
+\`\`\`
+
+### Deploy
+
+\`\`\`bash
+# First deploy
+kamal setup
+
+# Subsequent deploys — push to main (GitHub Actions auto-deploys)
+git push origin main
+\`\`\`
+
+---
+
+## Keeping This README Up to Date
+
+When any of these change, update the relevant section above:
+
+- **New third-party service** — add a row to the dev and/or prod services table
+- **New env var** — add to the table AND to `.env.example`
+- **Infrastructure change** — update the Production Setup section
+- **Prerequisite change** — update the Prerequisites list
+
+---
 
 ## Documentation
 
 - [Design System](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Business Rules](docs/BUSINESS_RULES.md)
+- [Schema](docs/SCHEMA.md)
 - [Roadmap](docs/ROADMAP.md)
 
 ## License
@@ -434,7 +561,7 @@ See [docs/PROJECT_SETUP.md](docs/PROJECT_SETUP.md) for setup instructions.
 When creating a new project:
 
 1. [ ] Create CLAUDE.md (brief, links to docs/)
-2. [ ] Create README.md
+2. [ ] Create README.md (dev setup, prod setup, third-party services table, env vars — keep updated)
 3. [ ] Create docs/ folder
 4. [ ] Create docs/SCHEMA.md (from domain model interview)
 5. [ ] Create docs/BUSINESS_RULES.md (from domain model interview)

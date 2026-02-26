@@ -6,7 +6,7 @@
 
 ## Overview
 
-Rails 8 includes Solid Queue, Solid Cache, and Solid Cable. By default, they want separate databases. **We use a single database** for simplicity on Heroku and smaller apps.
+Rails includes Solid Queue, Solid Cache, and Solid Cable. By default, they want separate databases. **We use a single database** for simplicity and smaller apps.
 
 ---
 
@@ -17,7 +17,7 @@ Create a single migration for all Solid* tables. This replaces the separate sche
 ```ruby
 # db/migrate/YYYYMMDDHHMMSS_create_solid_tables.rb
 
-class CreateSolidTables < ActiveRecord::Migration[8.0]
+class CreateSolidTables < ActiveRecord::Migration[x.x]
   def change
     # ─────────────────────────────────────────────────────────────
     # Solid Cache
@@ -305,9 +305,9 @@ bin/rails jobs:work  # Should process the job
 
 ---
 
-## Heroku Considerations
+## Deployment Considerations
 
-- Single database = simpler, cheaper (one Postgres addon)
+- Single database = simpler setup (one PostgreSQL instance on Hetzner)
 - Works well for apps with moderate job/cache load
 - If you outgrow it, can migrate to separate databases later
-- Use `heroku run bin/rails db:migrate` for migrations
+- Use `kamal app exec "bin/rails db:migrate"` for migrations
