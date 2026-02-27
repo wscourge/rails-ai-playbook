@@ -41,7 +41,7 @@ Ask the user:
 
 ```bash
 # .env
-GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
+GA_MEASUREMENT_ID=G-XXXXXXXXXX
 ```
 
 ### Add to Layout
@@ -52,13 +52,13 @@ GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
   <!-- ... other head content ... -->
 
   <%# Google Analytics 4 %>
-  <% if ENV['GOOGLE_ANALYTICS_ID'].present? %>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=<%= ENV['GOOGLE_ANALYTICS_ID'] %>"></script>
+  <% if ENV['GA_MEASUREMENT_ID'].present? %>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=<%= ENV['GA_MEASUREMENT_ID'] %>"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', '<%= ENV['GOOGLE_ANALYTICS_ID'] %>');
+      gtag('config', '<%= ENV['GA_MEASUREMENT_ID'] %>');
     </script>
   <% end %>
 </head>
@@ -284,7 +284,7 @@ Add to layout for rich search results:
 
 ```bash
 # .env
-GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
+GA_MEASUREMENT_ID=G-XXXXXXXXXX
 AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
 
 # For sitemap generation in production

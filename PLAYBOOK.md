@@ -11,7 +11,7 @@
 3. **Keep CLAUDE.md clean** - Brief index that links to detailed docs
 4. **Use .env files** - All secrets via `ENV["X"]`, never hardcode
 5. **Stripe CLI only** - Create products/prices via CLI, not dashboard
-6. **Single database** - Solid Queue/Cache/Cable all use primary DB
+6. **Use `./tmp/commands-output/` for scratch files** - When redirecting command output to a file (e.g. because the terminal doesn't show it), always write to the project's `./tmp/commands-output/` directory, never to `/tmp`
 7. **Small tasks** - Prefer 30-90 minute chunks, suggest splits if scope creeps
 
 ---
@@ -25,16 +25,18 @@
 | **Frontend** | Inertia.js + React + Vite |
 | **Styling** | Tailwind + shadcn/ui |
 | **Payments** | Stripe via Pay gem |
-| **Jobs** | Solid Queue (single DB) |
-| **Cache** | Solid Cache (single DB) |
-| **WebSockets** | Solid Cable (single DB) |
+| **Jobs** | Solid Queue (separate DB) |
+| **Cache** | Solid Cache (separate DB) |
+| **WebSockets** | Solid Cable (separate DB) |
 | **Email** | Resend (prod) / letter_opener_web (dev) |
 | **Testing (Ruby)** | RSpec + FactoryBot + FFaker + Shoulda Matchers |
 | **Testing (JS)** | Jest (logic only, no React) |
 | **CSS Linting** | Stylelint |
 | **JS Linting** | ESLint |
-| **Formatting** | Prettier (JS/TS/CSS/YAML) |
+| **Formatting** | Prettier (JS/CSS/YAML) |
 | **YAML Linting** | yamllint |
+| **Ruby Linting** | RuboCop + extensions (rails, rspec, performance, capybara, factory_bot) |
+| **Migrations** | strong_migrations gem (safe migration checks) |
 | **Package Manager (JS)** | Bun |
 | **Business Logic** | Interactor gem (small, composable steps) |
 | **Params Validation** | Explicit validation in interactors (not model validations) |
@@ -50,9 +52,10 @@
 
 ### Step 1: Interview Me
 
-Before writing any code, ask me about:
+Before writing any code, ask me the questions below. **Ask one topic at a time** — don't bundle multiple topics into a single message. Wait for my answer before moving to the next topic.
 
 **Project basics:**
+- What's the app name? (if undecided, we'll use `myapp` as a placeholder everywhere — directory name, database names, `APP_NAME` env var — and you can find-and-replace it later)
 - What does this app do? (one sentence)
 - Who is the target user?
 - What's the MVP scope?
@@ -71,7 +74,7 @@ Before writing any code, ask me about:
 
 **Technical requirements:**
 - Need Google OAuth?
-- Need Stripe payments? If yes, what pricing model? (see below)
+- Need Stripe payments? If yes, what pricing model? (subscriptions, one-time payments, metered/usage-based, or a mix — see below)
 - Will this also be a mobile app? (iOS / Android via Capacitor — see below)
 - Any specific integrations?
 
@@ -108,15 +111,37 @@ If the app needs mobile distribution, wrap the web app with **Capacitor**:
 - Add platform-specific env vars (see [env-template.md](env-template.md))
 - Use Capacitor plugins for native features (push, haptics, status bar, etc.)
 
+### Git Workflow During Setup
+
+1. **Initialize the repo first** — run `git init` and set the default branch to `main` before creating any files
+2. **Commit after each step** — when you finish a step, commit all changes before moving to the next one
+3. Follow the [Conventional Commits](#git) format for all commit messages (e.g. `chore: scaffold project structure`, `feat(auth): add Rails authentication`)
+
 ### Step 2: Create Project Structure
 
-After the interview, generate:
+After the interview, initialize the repo and generate the project structure. Use the app name from the interview, or `myapp` if undecided:
+
+```bash
+mkdir myapp && cd myapp
+git init
+git branch -M main
+```
+
+Then create:
 
 ```
-my-app/
+myapp/
 ├── CLAUDE.md                    # Brief index (see project-structure.md)
 ├── README.md                    # Dev + prod setup, third-party services, env vars
 ├── .env.example                 # Required ENV vars
+├── .rubocop.yml                 # RuboCop config (from playbook)
+├── .rubocop_todo.yml            # Auto-generated exclusions (ok to start empty)
+├── .yamllint.yml                # YAML linting rules
+├── .prettierrc                  # Prettier formatting rules
+├── .prettierignore              # Files Prettier should skip
+├── .stylelintrc.json            # Stylelint CSS rules
+├── eslint.config.mjs            # ESLint config
+├── jsconfig.json                # @ alias for IDE support (no TypeScript)
 ├── .claude/
 │   └── hooks/
 │       └── post-commit-audit.sh # Quality enforcement (from playbook)
@@ -141,6 +166,85 @@ Use my template or set up manually following these docs:
 - [kamal-deploy.md](kamal-deploy.md) - Deployment config
 - [env-template.md](env-template.md) - Environment variables
 
+### Step 3.1: Set Up Local PostgreSQL
+
+Ensure PostgreSQL is running locally on the default connection (`localhost:5432`), then create the app's databases automatically. The app name comes from `APP_NAME` in `.env` (defaults to `myapp`).
+
+```bash
+# Ensure Postgres is running (macOS / Homebrew)
+brew services start postgresql@17
+
+# Create development + test databases (primary + Solid stack)
+bin/rails db:create
+bin/rails db:prepare
+```
+
+This creates all 8 databases using the default local connection (no password, current OS user):
+- `{app}_development`, `{app}_test` (primary)
+- `{app}_queue_development`, `{app}_queue_test` (Solid Queue)
+- `{app}_cache_development`, `{app}_cache_test` (Solid Cache)
+- `{app}_cable_development`, `{app}_cable_test` (Solid Cable)
+
+**If `db:create` fails** because your local Postgres requires a password or different user, add these to your `.env`:
+
+```
+DATABASE_USER=your_pg_user
+DATABASE_PASSWORD=your_pg_password
+```
+
+And update `database.yml`'s default block:
+
+```yaml
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  username: <%= ENV.fetch("DATABASE_USER", "") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "") %>
+  host: localhost
+  port: 5432
+```
+
+### Step 3.5: Configure Linting & Formatting
+
+After `rails new` and frontend setup, create these config files from the playbook templates. They must exist before writing any application code so all code is clean from the start.
+
+| File | Source | Purpose |
+|------|--------|---------|
+| `.rubocop.yml` | [code-quality.md](code-quality.md#rubocop) | Ruby linting base config |
+| `.rubocop_todo.yml` | `touch .rubocop_todo.yml` | Empty initially, generated later with `--auto-gen-config` |
+| `eslint.config.mjs` | [inertia-react.md](inertia-react.md#eslint--prettier) | JS/JSX linting with import sorting + unused import removal |
+| `.prettierrc` | [inertia-react.md](inertia-react.md#eslint--prettier) | Formatting rules (single quotes, trailing commas, 80 width) |
+| `.prettierignore` | [inertia-react.md](inertia-react.md#eslint--prettier) | Skip node_modules, public, vendor, tmp |
+| `.stylelintrc.json` | [inertia-react.md](inertia-react.md#stylelint) | CSS linting with Tailwind-aware rules |
+| `.yamllint.yml` | [code-quality.md](code-quality.md#yamllint) | YAML linting for locale files |
+| `jsconfig.json` | [inertia-react.md](inertia-react.md#path-alias----appfrontend) | `@` → `app/frontend/` alias for IDE support |
+
+Also add these scripts to `package.json`:
+
+```json
+{
+  "scripts": {
+    "lint": "eslint app/frontend/",
+    "lint:fix": "eslint app/frontend/ --fix",
+    "lint:css": "stylelint \"app/frontend/**/*.css\"",
+    "lint:css:fix": "stylelint \"app/frontend/**/*.css\" --fix",
+    "format": "prettier --write 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'",
+    "format:check": "prettier --check 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'"
+  }
+}
+```
+
+Verify everything works:
+
+```bash
+bundle exec rubocop          # Ruby — should pass with zero offenses
+bun lint                     # JS — should pass
+bun lint:css                 # CSS — should pass
+bun format:check             # Formatting — should pass
+yamllint config/locales/     # YAML — should pass
+```
+
 ### Step 4: Add Common Features
 
 After the core app is running, add these as needed:
@@ -160,17 +264,21 @@ After the core app is running, add these as needed:
 
 - Controllers thin; business logic in interactors (`app/interactors/`)
 - **Interactors, not services.** Use the [Interactor](https://github.com/collectiveidea/interactor) gem. Each interactor does one small thing. Use `Interactor::Organizer` to compose multi-step flows. See [interactors.md](interactors.md).
-- **Validate params in interactors**, not in models. Models only have DB-level constraints (`NOT NULL`, unique indexes). Business validation happens in a dedicated `Validate*` interactor step.
+- **Validate params in interactors**, never on models. No `validates` in model files — ever. Validate right next to the write operation in a dedicated `Validate*` interactor step. The database enforces integrity (NOT NULL, unique indexes, CHECK constraints).
+- **Standardized index params.** Every list endpoint uses the same query param names: `search`, `page`, `per_page`, `sort`, `sort_direction`, `filter[field]`. Use the `Indexable` concern. See [code-quality.md](code-quality.md#index--list-endpoints).
 - **Validate on frontend first.** Before submitting to the backend, validate the form client-side. Show errors immediately without a round-trip. See [inertia-react.md](inertia-react.md#frontend-validation).
 - **LLM integration:** Use `ruby_llm` gem (unified interface for OpenAI, Anthropic, Gemini, OpenRouter). Only use `ruby-openai` if explicitly requested.
 - Strong params only; never `.permit!`
+- **Seeds always idempotent.** Use `find_or_create_by` on natural keys. Split into numbered files under `db/seeds/`. See [code-quality.md](code-quality.md#seeds).
 - Jobs idempotent; use Solid Queue
 - Public actions explicit: `allow_unauthenticated_access`
 - Use `ENV["X"]` for all configuration
 - **i18n everywhere.** No hardcoded English strings. Use `I18n.t()` in Ruby, `useTranslation()` in React. See [i18n.md](i18n.md).
 - **Sentry for errors.** Configure `sentry-ruby` and `sentry-rails` gems. See [sentry.md](sentry.md).
 - **Bullet gem** in development and test. Raises in test, logs in development. See [code-quality.md](code-quality.md#bullet).
+- **RuboCop with extensions.** Always enabled. Use `.rubocop_todo.yml` for incremental cleanup. Inline Metrics disables are OK for big hashes/case statements. See [code-quality.md](code-quality.md#rubocop).
 - **Class methods use `class << self`**, not `self.method_name`. Always keep class methods at the top of the class, before instance methods.
+- **Migrations must be safe and reversible.** Use `strong_migrations` gem. Add indexes with `algorithm: :concurrently`. Always write reversible migrations — after creating one, run `bin/rails db:migrate` then `bin/rails db:rollback` to confirm it works both ways. See [code-quality.md](code-quality.md#database).
 
 ### Git
 
@@ -227,7 +335,7 @@ Use it for:
 |-----|---------|
 | [auth.md](auth.md) | Rails auth generator + OmniAuth patterns |
 | [brand-interview.md](brand-interview.md) | Questions to ask about design/identity |
-| [solid-stack.md](solid-stack.md) | Single-database Solid Queue/Cache/Cable |
+| [solid-stack.md](solid-stack.md) | Solid Queue/Cache/Cable with separate databases |
 | [stripe-payments.md](stripe-payments.md) | Stripe CLI workflow + Pay gem |
 | [inertia-react.md](inertia-react.md) | Vite + React + shadcn + inertia_share + frontend philosophy |
 | [kamal-deploy.md](kamal-deploy.md) | Deployment, GitHub Actions CI/CD, secrets management |
@@ -272,8 +380,10 @@ Before completing any task:
 - [ ] Tests added/updated, `bundle exec rspec` passes
 - [ ] No hardcoded English — i18n keys used (both frontend and backend)
 - [ ] Frontend form validation present (Zod schema)
-- [ ] Backend params validated in interactor (not model)
+- [ ] Backend params validated in interactor (no `validates` on models)
 - [ ] Inertia `<Link/>` for internal navigation
+- [ ] Routes from `usePage().props.routes` — no hardcoded paths
+- [ ] Imports use `@/` — no `../` parent imports
 - [ ] shadcn/ui for controls & cards (checked [Blocks](https://www.shadcn.io/blocks/) first)
 - [ ] Icons imported from `@/components/icons/` wrappers (not directly from lucide-react)
 - [ ] shadcn/ui component text is i18n-ready (no hardcoded English in components)
@@ -284,7 +394,8 @@ Before completing any task:
 - [ ] Class methods use `class << self` block (not `self.method_name`)
 - [ ] Bullet gem not flagging N+1 queries
 - [ ] Stylelint passes on CSS files
-- [ ] ESLint passes on JS/TS files
+- [ ] ESLint passes on JS files
 - [ ] Prettier formatting applied (`bun format:check`)
 - [ ] yamllint passes on locale YAML files
+- [ ] RuboCop passes (`bundle exec rubocop`)
 - [ ] Commit messages follow Conventional Commits (`type(scope): description`)

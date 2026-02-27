@@ -48,11 +48,6 @@ class ContactRequest < ApplicationRecord
   belongs_to :user, optional: true            # submitter (if logged in)
   belongs_to :resolved_by, class_name: "User", optional: true
 
-  validates :name, presence: true
-  validates :email, presence: true
-  validates :message, presence: true
-  validates :status, inclusion: { in: STATUSES }
-
   scope :newest_first, -> { order(created_at: :desc) }
   scope :unresolved, -> { where(status: %w[new in_progress]) }
   scope :by_status, ->(status) { status.present? ? where(status: status) : all }
@@ -474,7 +469,7 @@ module Staff
             message: r.message.truncate(200),
             status: r.status,
             staff_notes: r.staff_notes,
-            created_at: r.created_at.iso8601,
+            formatted_date: r.created_at.strftime("%b %-d, %Y"),
             resolved_by: r.resolved_by&.full_name,
           }
         },
@@ -500,7 +495,7 @@ module Staff
           status: request.status,
           staff_notes: request.staff_notes,
           user_id: request.user_id,
-          created_at: request.created_at.iso8601,
+          formatted_date: request.created_at.strftime("%b %-d, %Y %l:%M %p"),
           resolved_by: request.resolved_by&.full_name,
           resolved_at: request.updated_at.iso8601,
         },
@@ -626,7 +621,7 @@ export default function ContactRequestsIndex({ contact_requests, filters, counts
                   </Badge>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
-                  {new Date(req.created_at).toLocaleDateString()}
+                  {req.formatted_date}
                 </TableCell>
                 <TableCell>
                   <Link href={`/staff/contact_requests/${req.id}`}>
@@ -695,7 +690,7 @@ export default function ContactRequestShow({ contact_request }) {
             <CardTitle className="text-lg">{contact_request.name}</CardTitle>
             <p className="text-sm text-muted-foreground">
               {contact_request.email} &middot;{" "}
-              {new Date(contact_request.created_at).toLocaleString()}
+              {contact_request.formatted_date}
             </p>
           </CardHeader>
           <CardContent>

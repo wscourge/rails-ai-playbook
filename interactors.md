@@ -116,8 +116,9 @@ end
 
 ### Why Not Model Validations?
 
-- **Models are for data shape** (column types, NOT NULL, unique constraints at DB level).
-- **Interactors are for business rules** (is this email taken? is the user allowed to do this? are all required fields present?).
+- **No `validates` on models — ever.** Models define associations, scopes, normalizations, and helper methods. Never validation rules.
+- **The database enforces data integrity** — NOT NULL, unique indexes, CHECK constraints, foreign keys.
+- **Interactors enforce business rules** — right next to the write operation. Is this email taken? Is the user allowed to do this? Are all required fields present? All of this lives in a `Validate*` interactor step.
 - This keeps models thin, makes validation testable in isolation, and avoids the Rails pattern where models accumulate dozens of conditional validations.
 
 ---

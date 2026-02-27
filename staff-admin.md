@@ -40,8 +40,6 @@ class Staff < ApplicationRecord
 
   belongs_to :user
 
-  validates :role, inclusion: { in: ROLES }
-
   class << self
     def roles
       ROLES
@@ -314,22 +312,20 @@ app/frontend/layout/
 
 import { Link, usePage } from "@inertiajs/react";
 import { useTranslation } from "react-i18next";
-import {
-  LayoutDashboard,
-  Users,
-  Mail,
-  Shield,
-  Settings,
-  ArrowLeft,
-} from "lucide-react";
+import { IconLayoutDashboard } from "@/components/icons/layout-dashboard";
+import { IconUsers } from "@/components/icons/users";
+import { IconMail } from "@/components/icons/mail";
+import { IconShield } from "@/components/icons/shield";
+import { IconSettings } from "@/components/icons/settings";
+import { IconArrowLeft } from "@/components/icons/arrow-left";
 import { cn } from "@/lib/utils";
 
 const ICON_MAP = {
-  LayoutDashboard,
-  Users,
-  Mail,
-  Shield,
-  Settings,
+  LayoutDashboard: IconLayoutDashboard,
+  Users: IconUsers,
+  Mail: IconMail,
+  Shield: IconShield,
+  Settings: IconSettings,
 };
 
 export default function StaffLayout({ children }) {
@@ -346,7 +342,7 @@ export default function StaffLayout({ children }) {
             href={routes.app || "/"}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <IconArrowLeft className="h-4 w-4" />
             {t("staff.back_to_app")}
           </Link>
           <h2 className="mt-3 font-semibold text-lg">{t("staff.title")}</h2>
@@ -396,7 +392,8 @@ export default function StaffLayout({ children }) {
 import StaffLayout from "@/layout/StaffLayout";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, UserPlus } from "lucide-react";
+import { IconUsers } from "@/components/icons/users";
+import { IconUserPlus } from "@/components/icons/user-plus";
 
 export default function StaffDashboard({ stats }) {
   const { t } = useTranslation();
@@ -411,7 +408,7 @@ export default function StaffDashboard({ stats }) {
             <CardTitle className="text-sm font-medium">
               {t("staff.dashboard.total_users")}
             </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <IconUsers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total_users}</div>
@@ -423,7 +420,7 @@ export default function StaffDashboard({ stats }) {
             <CardTitle className="text-sm font-medium">
               {t("staff.dashboard.new_today")}
             </CardTitle>
-            <UserPlus className="h-4 w-4 text-muted-foreground" />
+            <IconUserPlus className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.new_users_today}</div>

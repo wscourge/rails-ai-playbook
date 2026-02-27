@@ -18,8 +18,11 @@ APP_URL="http://localhost:3000"
 # Database
 # ─────────────────────────────────────────────────────────────
 # Development uses database.yml defaults
-# Production: set DATABASE_URL in .kamal/secrets
+# Production: set these in .kamal/secrets
 # DATABASE_URL=postgres://user:pass@<db-private-ip>:5432/myapp_production
+# QUEUE_DATABASE_URL=postgres://user:pass@<db-private-ip>:5432/myapp_queue_production
+# CACHE_DATABASE_URL=postgres://user:pass@<db-private-ip>:5432/myapp_cache_production
+# CABLE_DATABASE_URL=postgres://user:pass@<db-private-ip>:5432/myapp_cable_production
 
 # ─────────────────────────────────────────────────────────────
 # Rails
@@ -247,6 +250,9 @@ REQUIRED_ENV_VARS_PRODUCTION = %w[
   STRIPE_WEBHOOK_SECRET
   RESEND_API_KEY
   DATABASE_URL
+  QUEUE_DATABASE_URL
+  CACHE_DATABASE_URL
+  CABLE_DATABASE_URL
 ]
 
 missing = REQUIRED_ENV_VARS.select { |var| ENV[var].blank? }

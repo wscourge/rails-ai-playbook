@@ -96,7 +96,18 @@ This playbook is opinionated. It assumes:
 | **Payments** | Stripe via Pay gem |
 | **Jobs** | Solid Queue (single DB) |
 | **Cache** | Solid Cache (single DB) |
-| **Email** | Resend (prod) / letter_opener (dev) |
+| **Email** | Resend (prod) / letter_opener_web (dev) |
+| **Testing (Ruby)** | RSpec + FactoryBot + FFaker + Shoulda Matchers |
+| **Testing (JS)** | Jest (logic only) |
+| **CSS Linting** | Stylelint |
+| **JS Linting** | ESLint |
+| **Formatting** | Prettier (JS/TS/CSS/YAML) |
+| **YAML Linting** | yamllint |
+| **Business Logic** | Interactor gem |
+| **Error Tracking** | Sentry |
+| **Search** | pg_search (PostgreSQL full-text) |
+| **i18n** | Rails I18n + react-i18next |
+| **CI/CD** | GitHub Actions (auto-deploy on push to main) |
 | **Hosting** | Kamal + Hetzner Cloud |
 
 If your stack is different, the structural patterns (living docs, quality hooks, interview-first workflow) still apply — you'd just swap out the stack-specific guides.
@@ -111,7 +122,7 @@ If your stack is different, the structural patterns (living docs, quality hooks,
 
 **Automated quality enforcement.** Post-commit hooks catch common violations — linting errors, hardcoded colors, raw HTML elements, unscoped database queries. Claude fixes issues before moving on.
 
-**Business logic in services, always.** Controllers are thin (authorize, call service, render). Models are thin (validations, scopes, associations). Services are where the real work happens.
+**Business logic in interactors, always.** Controllers are thin (authorize, call interactor, render). Models are thin (scopes, associations, DB-level constraints). Interactors are where the real work happens.
 
 ---
 

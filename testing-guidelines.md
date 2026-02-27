@@ -200,7 +200,9 @@ RSpec.shared_examples "paginated endpoint" do
   it "returns paginated results" do
     expect(json_response).to have_key("data")
     expect(json_response).to have_key("meta")
-    expect(json_response["meta"]).to include("current_page", "total_pages")
+    expect(json_response["meta"]).to include(
+      "current_page", "per_page", "total_pages", "total_count"
+    )
   end
 end
 

@@ -19,7 +19,7 @@
 
 ### Project Identity
 
-1. **What's the app called?** (name, any tagline?)
+1. **What's the app called?** (name, any tagline? — skip if undecided, we'll use `myapp` as a placeholder)
 2. **One sentence: what does it do?**
 3. **Who is the target user?** (role, technical level, context)
 4. **What feeling should the app evoke?** (professional, playful, minimal, bold, warm, techy?)

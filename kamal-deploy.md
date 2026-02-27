@@ -75,9 +75,10 @@ sudo -u postgres psql
 -- Create the app database and user
 CREATE USER myapp WITH PASSWORD 'STRONG_PASSWORD_HERE' CREATEDB;
 CREATE DATABASE myapp_production OWNER myapp;
+CREATE DATABASE myapp_queue_production OWNER myapp;
+CREATE DATABASE myapp_cache_production OWNER myapp;
+CREATE DATABASE myapp_cable_production OWNER myapp;
 
--- Optional: create a separate database for Solid Queue/Cache/Cable
--- (or use the same database, which is the playbook default)
 \q
 ```
 
@@ -89,6 +90,9 @@ listen_addresses = 'localhost,<db-1-private-ip>'
 
 # /etc/postgresql/16/main/pg_hba.conf (add this line)
 host    myapp_production    myapp    10.0.0.0/8    scram-sha-256
+host    myapp_queue_production    myapp    10.0.0.0/8    scram-sha-256
+host    myapp_cache_production    myapp    10.0.0.0/8    scram-sha-256
+host    myapp_cable_production    myapp    10.0.0.0/8    scram-sha-256
 ```
 
 ```bash
@@ -174,6 +178,9 @@ env:
   secret:
     - RAILS_MASTER_KEY
     - DATABASE_URL
+    - QUEUE_DATABASE_URL
+    - CACHE_DATABASE_URL
+    - CABLE_DATABASE_URL
     - RESEND_API_KEY
     - STRIPE_PUBLIC_KEY
     - STRIPE_SECRET_KEY
@@ -209,6 +216,9 @@ Store secrets locally (never committed). Kamal reads these automatically:
 KAMAL_REGISTRY_PASSWORD=dckr_pat_XXX
 RAILS_MASTER_KEY=<paste from config/master.key>
 DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_production
+QUEUE_DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_queue_production
+CACHE_DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_cache_production
+CABLE_DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_cable_production
 RESEND_API_KEY=re_XXX
 STRIPE_PUBLIC_KEY=pk_live_XXX
 STRIPE_SECRET_KEY=sk_live_XXX
@@ -405,6 +415,9 @@ gh auth login
 gh secret set KAMAL_REGISTRY_PASSWORD
 gh secret set RAILS_MASTER_KEY
 gh secret set DATABASE_URL
+gh secret set QUEUE_DATABASE_URL
+gh secret set CACHE_DATABASE_URL
+gh secret set CABLE_DATABASE_URL
 gh secret set RESEND_API_KEY
 gh secret set STRIPE_PUBLIC_KEY
 gh secret set STRIPE_SECRET_KEY
@@ -501,6 +514,9 @@ jobs:
       KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
       RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      QUEUE_DATABASE_URL: ${{ secrets.QUEUE_DATABASE_URL }}
+      CACHE_DATABASE_URL: ${{ secrets.CACHE_DATABASE_URL }}
+      CABLE_DATABASE_URL: ${{ secrets.CABLE_DATABASE_URL }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY }}
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}

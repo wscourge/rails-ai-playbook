@@ -1,234 +1,98 @@
-# Solid Stack - Single Database Setup
+# Solid Stack - Separate Databases (Rails Default)
 
-> Configure Solid Queue, Solid Cache, and Solid Cable to use the primary database (no separate databases).
+> Configure Solid Queue, Solid Cache, and Solid Cable using the default Rails approach with separate databases.
 
 ---
 
 ## Overview
 
-Rails includes Solid Queue, Solid Cache, and Solid Cable. By default, they want separate databases. **We use a single database** for simplicity and smaller apps.
+Rails includes Solid Queue, Solid Cache, and Solid Cable. By default, each gets its own database. **We use this default setup** — each Solid library manages its own schema via the bundled schema files.
 
 ---
 
-## Step 1: Consolidated Migration
+## Step 1: config/database.yml
 
-Create a single migration for all Solid* tables. This replaces the separate schema files.
+Add the queue, cache, and cable databases alongside your primary database:
 
-```ruby
-# db/migrate/YYYYMMDDHHMMSS_create_solid_tables.rb
+```yaml
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
-class CreateSolidTables < ActiveRecord::Migration[x.x]
-  def change
-    # ─────────────────────────────────────────────────────────────
-    # Solid Cache
-    # ─────────────────────────────────────────────────────────────
-    create_table "solid_cache_entries", force: :cascade do |t|
-      t.binary "key", limit: 1024, null: false
-      t.binary "value", limit: 536870912, null: false
-      t.datetime "created_at", null: false
-      t.integer "key_hash", limit: 8, null: false
-      t.integer "byte_size", limit: 4, null: false
-      t.index ["byte_size"], name: "index_solid_cache_entries_on_byte_size"
-      t.index ["key_hash", "byte_size"], name: "index_solid_cache_entries_on_key_hash_and_byte_size"
-      t.index ["key_hash"], name: "index_solid_cache_entries_on_key_hash", unique: true
-    end
+development:
+  primary:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_development
+  queue:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_queue_development
+    migrations_paths: db/queue_migrate
+  cache:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_cache_development
+    migrations_paths: db/cache_migrate
+  cable:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_cable_development
+    migrations_paths: db/cable_migrate
 
-    # ─────────────────────────────────────────────────────────────
-    # Solid Cable
-    # ─────────────────────────────────────────────────────────────
-    create_table "solid_cable_messages", force: :cascade do |t|
-      t.binary "channel", limit: 1024, null: false
-      t.binary "payload", limit: 536870912, null: false
-      t.datetime "created_at", null: false
-      t.integer "channel_hash", limit: 8, null: false
-      t.index ["channel"], name: "index_solid_cable_messages_on_channel"
-      t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
-      t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
-    end
+test:
+  primary:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_test
+  queue:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_queue_test
+    migrations_paths: db/queue_migrate
+  cache:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_cache_test
+    migrations_paths: db/cache_migrate
+  cable:
+    <<: *default
+    database: <%= ENV.fetch("APP_NAME", "myapp") %>_cable_test
+    migrations_paths: db/cable_migrate
 
-    # ─────────────────────────────────────────────────────────────
-    # Solid Queue
-    # ─────────────────────────────────────────────────────────────
-    create_table "solid_queue_blocked_executions", force: :cascade do |t|
-      t.bigint "job_id", null: false
-      t.string "queue_name", null: false
-      t.integer "priority", default: 0, null: false
-      t.string "concurrency_key", null: false
-      t.datetime "expires_at", null: false
-      t.datetime "created_at", null: false
-      t.index ["concurrency_key", "priority", "job_id"], name: "index_solid_queue_blocked_executions_for_release"
-      t.index ["expires_at", "concurrency_key"], name: "index_solid_queue_blocked_executions_for_maintenance"
-      t.index ["job_id"], name: "index_solid_queue_blocked_executions_on_job_id", unique: true
-    end
-
-    create_table "solid_queue_claimed_executions", force: :cascade do |t|
-      t.bigint "job_id", null: false
-      t.bigint "process_id"
-      t.datetime "created_at", null: false
-      t.index ["job_id"], name: "index_solid_queue_claimed_executions_on_job_id", unique: true
-      t.index ["process_id", "job_id"], name: "index_solid_queue_claimed_executions_on_process_id_and_job_id"
-    end
-
-    create_table "solid_queue_failed_executions", force: :cascade do |t|
-      t.bigint "job_id", null: false
-      t.text "error"
-      t.datetime "created_at", null: false
-      t.index ["job_id"], name: "index_solid_queue_failed_executions_on_job_id", unique: true
-    end
-
-    create_table "solid_queue_jobs", force: :cascade do |t|
-      t.string "queue_name", null: false
-      t.string "class_name", null: false
-      t.text "arguments"
-      t.integer "priority", default: 0, null: false
-      t.string "active_job_id"
-      t.datetime "scheduled_at"
-      t.datetime "finished_at"
-      t.string "concurrency_key"
-      t.datetime "created_at", null: false
-      t.datetime "updated_at", null: false
-      t.index ["active_job_id"], name: "index_solid_queue_jobs_on_active_job_id"
-      t.index ["class_name"], name: "index_solid_queue_jobs_on_class_name"
-      t.index ["finished_at"], name: "index_solid_queue_jobs_on_finished_at"
-      t.index ["queue_name", "finished_at"], name: "index_solid_queue_jobs_for_filtering"
-      t.index ["scheduled_at", "finished_at"], name: "index_solid_queue_jobs_for_alerting"
-    end
-
-    create_table "solid_queue_pauses", force: :cascade do |t|
-      t.string "queue_name", null: false
-      t.datetime "created_at", null: false
-      t.index ["queue_name"], name: "index_solid_queue_pauses_on_queue_name", unique: true
-    end
-
-    create_table "solid_queue_processes", force: :cascade do |t|
-      t.string "kind", null: false
-      t.datetime "last_heartbeat_at", null: false
-      t.bigint "supervisor_id"
-      t.integer "pid", null: false
-      t.string "hostname"
-      t.text "metadata"
-      t.datetime "created_at", null: false
-      t.string "name", null: false
-      t.index ["last_heartbeat_at"], name: "index_solid_queue_processes_on_last_heartbeat_at"
-      t.index ["name", "supervisor_id"], name: "index_solid_queue_processes_on_name_and_supervisor_id", unique: true
-      t.index ["supervisor_id"], name: "index_solid_queue_processes_on_supervisor_id"
-    end
-
-    create_table "solid_queue_ready_executions", force: :cascade do |t|
-      t.bigint "job_id", null: false
-      t.string "queue_name", null: false
-      t.integer "priority", default: 0, null: false
-      t.datetime "created_at", null: false
-      t.index ["job_id"], name: "index_solid_queue_ready_executions_on_job_id", unique: true
-      t.index ["priority", "job_id"], name: "index_solid_queue_poll_all"
-      t.index ["queue_name", "priority", "job_id"], name: "index_solid_queue_poll_by_queue"
-    end
-
-    create_table "solid_queue_recurring_executions", force: :cascade do |t|
-      t.bigint "job_id", null: false
-      t.string "task_key", null: false
-      t.datetime "run_at", null: false
-      t.datetime "created_at", null: false
-      t.index ["job_id"], name: "index_solid_queue_recurring_executions_on_job_id", unique: true
-      t.index ["task_key", "run_at"], name: "index_solid_queue_recurring_executions_on_task_key_and_run_at", unique: true
-    end
-
-    create_table "solid_queue_recurring_tasks", force: :cascade do |t|
-      t.string "key", null: false
-      t.string "schedule", null: false
-      t.string "command", limit: 2048
-      t.string "class_name"
-      t.text "arguments"
-      t.string "queue_name"
-      t.integer "priority", default: 0
-      t.boolean "static", default: true, null: false
-      t.text "description"
-      t.datetime "created_at", null: false
-      t.datetime "updated_at", null: false
-      t.index ["key"], name: "index_solid_queue_recurring_tasks_on_key", unique: true
-      t.index ["static"], name: "index_solid_queue_recurring_tasks_on_static"
-    end
-
-    create_table "solid_queue_scheduled_executions", force: :cascade do |t|
-      t.bigint "job_id", null: false
-      t.string "queue_name", null: false
-      t.integer "priority", default: 0, null: false
-      t.datetime "scheduled_at", null: false
-      t.datetime "created_at", null: false
-      t.index ["job_id"], name: "index_solid_queue_scheduled_executions_on_job_id", unique: true
-      t.index ["scheduled_at", "priority", "job_id"], name: "index_solid_queue_dispatch_all"
-    end
-
-    create_table "solid_queue_semaphores", force: :cascade do |t|
-      t.string "key", null: false
-      t.integer "value", default: 1, null: false
-      t.datetime "expires_at", null: false
-      t.datetime "created_at", null: false
-      t.datetime "updated_at", null: false
-      t.index ["expires_at"], name: "index_solid_queue_semaphores_on_expires_at"
-      t.index ["key", "value"], name: "index_solid_queue_semaphores_on_key_and_value"
-      t.index ["key"], name: "index_solid_queue_semaphores_on_key", unique: true
-    end
-
-    # ─────────────────────────────────────────────────────────────
-    # Foreign Keys
-    # ─────────────────────────────────────────────────────────────
-    add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-    add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-    add_foreign_key "solid_queue_failed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-    add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-    add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-    add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
-  end
-end
+production:
+  primary:
+    <<: *default
+    url: <%= ENV["DATABASE_URL"] %>
+  queue:
+    <<: *default
+    url: <%= ENV["QUEUE_DATABASE_URL"] %>
+    migrations_paths: db/queue_migrate
+  cache:
+    <<: *default
+    url: <%= ENV["CACHE_DATABASE_URL"] %>
+    migrations_paths: db/cache_migrate
+  cable:
+    <<: *default
+    url: <%= ENV["CABLE_DATABASE_URL"] %>
+    migrations_paths: db/cable_migrate
 ```
 
 ---
 
-## Step 2: Remove Separate Schema Files
+## Step 2: Schema Files
 
-Delete these files if they exist (we're using the migration instead):
+Rails ships with schema files for each Solid library. These are used automatically when you run `db:prepare`. Ensure these files exist (they come from the gems):
+
+- `db/queue_schema.rb` — Solid Queue tables
+- `db/cache_schema.rb` — Solid Cache tables
+- `db/cable_schema.rb` — Solid Cable tables
+
+If they don't exist after installing the gems, generate them:
 
 ```bash
-rm -f db/queue_schema.rb
-rm -f db/cache_schema.rb
-rm -f db/cable_schema.rb
+bin/rails solid_queue:install
+bin/rails solid_cache:install
+bin/rails solid_cable:install
 ```
 
 ---
 
-## Step 3: Initializers (Single Database)
-
-### config/initializers/solid_queue.rb
-
-```ruby
-# Configure Solid Queue to use primary database
-Rails.application.configure do
-  config.solid_queue.connects_to = { database: { writing: :primary } }
-end
-```
-
-### config/initializers/solid_cache.rb
-
-```ruby
-# Configure Solid Cache to use primary database
-Rails.application.configure do
-  config.solid_cache.connects_to = { database: { writing: :primary } }
-end
-```
-
-### config/initializers/solid_cable.rb
-
-```ruby
-# Configure Solid Cable to use primary database
-Rails.application.configure do
-  config.solid_cable.connects_to = { database: { writing: :primary } }
-end
-```
-
----
-
-## Step 4: config/cable.yml
+## Step 3: config/cable.yml
 
 ```yaml
 development:
@@ -241,37 +105,11 @@ production:
   adapter: solid_cable
   polling_interval: 0.1.seconds
   message_retention: 1.day
-  # No connects_to needed - uses initializer config
 ```
 
 ---
 
-## Step 5: config/database.yml
-
-Single database only - no separate queue/cache/cable databases:
-
-```yaml
-default: &default
-  adapter: postgresql
-  encoding: unicode
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-
-development:
-  <<: *default
-  database: <%= ENV.fetch("APP_NAME", "myapp") %>_development
-
-test:
-  <<: *default
-  database: <%= ENV.fetch("APP_NAME", "myapp") %>_test
-
-production:
-  <<: *default
-  url: <%= ENV["DATABASE_URL"] %>
-```
-
----
-
-## Step 6: config/application.rb
+## Step 4: config/application.rb
 
 ```ruby
 # Set Solid Queue as Active Job adapter
@@ -280,11 +118,14 @@ config.active_job.queue_adapter = :solid_queue
 
 ---
 
-## Step 7: Run Migration
+## Step 5: Create & Migrate All Databases
 
 ```bash
-bin/rails db:migrate
+bin/rails db:create
+bin/rails db:prepare
 ```
+
+This creates all four databases (primary + queue + cache + cable) and loads the appropriate schemas.
 
 ---
 
@@ -305,9 +146,24 @@ bin/rails jobs:work  # Should process the job
 
 ---
 
+## Environment Variables
+
+In production, you need a `DATABASE_URL` for each database:
+
+```
+DATABASE_URL=postgresql://user:pass@host:5432/myapp_production
+QUEUE_DATABASE_URL=postgresql://user:pass@host:5432/myapp_queue_production
+CACHE_DATABASE_URL=postgresql://user:pass@host:5432/myapp_cache_production
+CABLE_DATABASE_URL=postgresql://user:pass@host:5432/myapp_cable_production
+```
+
+See [env-template.md](env-template.md) for the full list.
+
+---
+
 ## Deployment Considerations
 
-- Single database = simpler setup (one PostgreSQL instance on Hetzner)
-- Works well for apps with moderate job/cache load
-- If you outgrow it, can migrate to separate databases later
-- Use `kamal app exec "bin/rails db:migrate"` for migrations
+- Separate databases keep Solid tables isolated from application data
+- All four databases can live on the same PostgreSQL instance
+- Use `kamal app exec "bin/rails db:prepare"` for migrations
+- If you want to simplify later, you can consolidate to a single database by pointing all `connects_to` to `:primary`

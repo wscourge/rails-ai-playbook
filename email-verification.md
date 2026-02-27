@@ -80,7 +80,7 @@ class PasswordsController < ApplicationController
   end
 
   def create
-    if (user = User.find_by(email: params[:email]))
+    if (user = User.find_by(email_address: params[:email_address]))
       PasswordMailer.reset(user).deliver_later
     end
     # Always show success to prevent email enumeration
@@ -124,7 +124,7 @@ class User < ApplicationRecord
   end
 
   generates_token_for :email_verification, expires_in: 3.days do
-    email
+    email_address
   end
 end
 ```
@@ -139,7 +139,7 @@ class PasswordMailer < ApplicationMailer
     @token = user.generate_token_for(:password_reset)
     @url = edit_password_url(@token)
 
-    mail(to: user.email, subject: "Reset your password")
+    mail(to: user.email_address, subject: I18n.t("mailers.password_reset.subject"))
   end
 end
 ```
@@ -171,7 +171,7 @@ end
   <div class="container">
     <h2>Reset Your Password</h2>
 
-    <p>Hi <%= @user.name || @user.email %>,</p>
+    <p>Hi <%= @user.full_name %>,</p>
 
     <p>We received a request to reset your password. Click the button below to choose a new one:</p>
 
@@ -193,42 +193,45 @@ end
 
 ```jsx
 // app/frontend/pages/Auth/ForgotPassword.jsx
-import { Head, useForm } from "@inertiajs/react"
+import { Head, useForm, usePage } from "@inertiajs/react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export default function ForgotPassword() {
-  const { data, setData, post, processing } = useForm({ email: "" })
+  const { t } = useTranslation()
+  const { routes } = usePage().props
+  const { data, setData, post, processing } = useForm({ email_address: "" })
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    post("/passwords")
+    post(routes.passwords)
   }
 
   return (
     <>
-      <Head title="Forgot Password" />
+      <Head title={t("auth.forgot_password_title")} />
 
       <div className="max-w-md mx-auto py-12 px-4">
-        <h1 className="text-2xl font-bold mb-6">Forgot your password?</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("auth.forgot_password_title")}</h1>
         <p className="text-muted-foreground mb-6">
-          Enter your email and we'll send you a reset link.
+          {t("auth.forgot_password_description")}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email_address">{t("auth.email")}</Label>
             <Input
-              id="email"
+              id="email_address"
               type="email"
-              value={data.email}
-              onChange={(e) => setData("email", e.target.value)}
+              value={data.email_address}
+              onChange={(e) => setData("email_address", e.target.value)}
               required
             />
           </div>
           <Button type="submit" disabled={processing} className="w-full">
-            Send Reset Link
+            {t("auth.send_reset_link")}
           </Button>
         </form>
       </div>
@@ -239,12 +242,15 @@ export default function ForgotPassword() {
 
 ```jsx
 // app/frontend/pages/Auth/ResetPassword.jsx
-import { Head, useForm } from "@inertiajs/react"
+import { Head, useForm, usePage } from "@inertiajs/react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 export default function ResetPassword({ token }) {
+  const { t } = useTranslation()
+  const { routes } = usePage().props
   const { data, setData, patch, processing, errors } = useForm({
     password: "",
     password_confirmation: "",
@@ -252,19 +258,19 @@ export default function ResetPassword({ token }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    patch(`/passwords/${token}`)
+    patch(`${routes.passwords}/${token}`)
   }
 
   return (
     <>
-      <Head title="Reset Password" />
+      <Head title={t("auth.reset_password_title")} />
 
       <div className="max-w-md mx-auto py-12 px-4">
-        <h1 className="text-2xl font-bold mb-6">Set a new password</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("auth.reset_password_title")}</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="password">New Password</Label>
+            <Label htmlFor="password">{t("auth.new_password")}</Label>
             <Input
               id="password"
               type="password"
@@ -274,7 +280,7 @@ export default function ResetPassword({ token }) {
             />
           </div>
           <div>
-            <Label htmlFor="password_confirmation">Confirm Password</Label>
+            <Label htmlFor="password_confirmation">{t("auth.confirm_password")}</Label>
             <Input
               id="password_confirmation"
               type="password"
@@ -284,7 +290,7 @@ export default function ResetPassword({ token }) {
             />
           </div>
           <Button type="submit" disabled={processing} className="w-full">
-            Update Password
+            {t("auth.update_password")}
           </Button>
         </form>
       </div>
@@ -344,7 +350,7 @@ class EmailVerificationsController < ApplicationController
   end
 
   def create
-    EmailVerificationMailer.verify(current_user).deliver_later
+    EmailVerificationMailer.verify(Current.user).deliver_later
     redirect_back fallback_location: root_path, notice: "Verification email sent"
   end
 end
@@ -367,7 +373,7 @@ class EmailVerificationMailer < ApplicationMailer
     @token = user.generate_token_for(:email_verification)
     @url = email_verification_url(@token)
 
-    mail(to: user.email, subject: "Verify your email")
+    mail(to: user.email_address, subject: I18n.t("mailers.email_verification.subject"))
   end
 end
 ```
@@ -389,6 +395,32 @@ def create
     # handle errors
   end
 end
+```
+
+---
+
+## i18n Keys
+
+```yaml
+# app/frontend/locales/en/auth.yml (merge with existing)
+auth:
+  forgot_password_title: Forgot your password?
+  forgot_password_description: "Enter your email and we'll send you a reset link."
+  send_reset_link: Send Reset Link
+  reset_password_title: Set a new password
+  new_password: New Password
+  confirm_password: Confirm Password
+  update_password: Update Password
+```
+
+```yaml
+# config/locales/en/mailers.yml
+en:
+  mailers:
+    password_reset:
+      subject: Reset your password
+    email_verification:
+      subject: Verify your email
 ```
 
 ---

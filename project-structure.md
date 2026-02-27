@@ -13,6 +13,14 @@ my-app/
 ├── CLAUDE.md                    # Brief index, links to docs/
 ├── README.md                    # Dev + prod setup, third-party services, env vars
 ├── .env.example                 # Required ENV vars
+├── .rubocop.yml                 # RuboCop config (from playbook)
+├── .rubocop_todo.yml            # Auto-generated exclusions
+├── .yamllint.yml                # YAML linting rules
+├── .prettierrc                  # Prettier formatting rules
+├── .prettierignore              # Files Prettier should skip
+├── .stylelintrc.json            # Stylelint CSS rules
+├── eslint.config.mjs            # ESLint config
+├── jsconfig.json                # @ alias for IDE support
 ├── .claude/
 │   └── hooks/
 │       └── post-commit-audit.sh # Quality enforcement (from playbook)
@@ -35,14 +43,15 @@ my-app/
 # [App Name] - Claude Playbook
 
 > Instructions for working on this Rails + Inertia + Vite + Tailwind project.
+> **These rules are mandatory. Every file you create or modify must follow them.**
 
-**Project Docs:**
+**Read these docs before writing any code:**
+- [Code Quality](docs/CODE_QUALITY.md) - **Mandatory rules** for controllers, interactors, models, database, imports, linting
+- [Testing Guidelines](docs/TESTING.md) - **Mandatory rules** for RSpec, factories, shared examples
 - [Schema](docs/SCHEMA.md) - Every table, column, relationship, and index
 - [Business Rules](docs/BUSINESS_RULES.md) - Domain logic, permissions, edge cases
 - [Design System](docs/DESIGN.md) - Colors, typography, components
 - [Architecture](docs/ARCHITECTURE.md) - Technical decisions, key flows
-- [Code Quality](docs/CODE_QUALITY.md) - Rules for writing clean, maintainable code
-- [Testing Guidelines](docs/TESTING.md) - Principles for writing excellent tests
 - [Project Setup](docs/PROJECT_SETUP.md) - Local dev, testing, deploy
 - [Roadmap](docs/ROADMAP.md) - Feature priorities
 
@@ -58,10 +67,14 @@ my-app/
 | Auth | Rails sessions [+ Google OAuth] |
 | Payments | Stripe via Pay gem |
 | Jobs | Solid Queue |
-| Email | Resend (prod) / letter_opener (dev) |
-| Testing (Ruby) | RSpec + FactoryBot + FFaker |
+| Email | Resend (prod) / letter_opener_web (dev) |
+| Testing (Ruby) | RSpec + FactoryBot + FFaker + Shoulda Matchers |
 | Testing (JS) | Jest (logic only) |
 | CSS Linting | Stylelint |
+| JS Linting | ESLint |
+| Ruby Linting | RuboCop + extensions |
+| Formatting | Prettier (JS/CSS/YAML) |
+| YAML Linting | yamllint |
 | Package Manager (JS) | Bun |
 | Business Logic | Interactor gem |
 | Error Tracking | Sentry |
@@ -77,9 +90,18 @@ my-app/
 bin/dev              # Start dev server
 bundle exec rspec    # Run Ruby tests
 bun test             # Run JS tests (Jest)
-bun stylelint "app/frontend/**/*.css"  # Lint CSS
-bundle exec rspec spec/interactors/  # Run interactor tests
 bin/rails console    # Rails console
+\`\`\`
+
+### Linting & Formatting
+\`\`\`bash
+bundle exec rubocop          # Ruby linting
+bun lint                     # JS linting
+bun lint:fix                 # JS auto-fix (sorts imports, removes unused)
+bun lint:css                 # CSS linting
+bun format:check             # Prettier check (JS/CSS/YAML)
+bun format                   # Prettier auto-format
+yamllint config/locales/ app/frontend/locales/  # YAML linting
 \`\`\`
 
 ### Key Paths
@@ -88,34 +110,84 @@ bin/rails console    # Rails console
 - Interactors: `app/interactors/`
 - Locales (Ruby): `config/locales/`
 - Locales (React): `app/frontend/locales/`
-- Validators (JS): `app/frontend/lib/validators.ts`
+- Validators (JS): `app/frontend/lib/validators.js`
 - Styles: `app/frontend/entrypoints/application.css`
 
-### Conventions
-- Internal links: `<Link href={routes.X} />` (Inertia)
-- Routes: Always use shared routes from `usePage().props.routes`
-- Icons: Lucide React only
-- Components: shadcn/ui
-- Colors: Tailwind tokens (`bg-background`, not `bg-white`)
-- Business logic: Always in `app/interactors/`, never in controllers or models
-- Validation (backend): In `Validate*` interactors, not model validations
-- Validation (frontend): Zod schemas, validate before sending request
-- i18n: `I18n.t()` in Ruby, `useTranslation()` in React — no hardcoded English
-- Class methods: `class << self` block, never `self.method_name`
-- Timestamps: Stored UTC, displayed in user's timezone via `Time.use_zone`
+---
 
-### Frontend Design
-When building pages, components, or layouts, use the `/frontend-design` skill to generate distinctive, production-grade UI. Avoids generic AI aesthetics and uses the project's design system (Tailwind + shadcn/ui).
+## Mandatory Conventions
+
+### Backend
+
+- **Controllers do 3 things:** authorize, call an interactor, render. No business logic.
+- **All business logic in interactors** (`app/interactors/`). Use the Interactor gem. One interactor = one job.
+- **No `validates` on models. Ever.** All validation lives in `Validate*` interactors. The database enforces integrity (NOT NULL, unique indexes, CHECK constraints, foreign keys).
+- **Strong params only.** Never `.permit!`.
+- **Class methods use `class << self`**, not `self.method_name`. Class methods go at the top, before instance methods.
+- **Jobs call one interactor.** No business logic in job classes.
+- **Seeds are idempotent.** Use `find_or_create_by`. Split into numbered files under `db/seeds/`.
+- **Index endpoints use standardized params:** `search`, `page`, `per_page`, `sort`, `sort_direction`, `filter[field]`. Use the `Indexable` concern.
+- **Return 404 for unauthorized access**, not 403.
+- **i18n everywhere.** `I18n.t()` in Ruby — no hardcoded English strings.
+
+### Frontend
+
+- **No TypeScript.** Plain JS/JSX only. No `.ts`, `.tsx` files.
+- **Imports use `@/` alias** (maps to `app/frontend/`). No `../` imports ever. Relative `./` only for same directory or one level down.
+- **Internal links: `<Link href={routes.X} />`** (Inertia). Never construct URLs with template literals.
+- **Routes from server:** `usePage().props.routes`. Never hardcode paths.
+- **Icons via wrapper components** in `@/components/icons/`. Never import directly from `lucide-react`.
+- **shadcn/ui for all controls.** Check [Blocks](https://www.shadcn.io/blocks/) before building custom components.
+- **Tailwind tokens only.** `bg-background`, not `bg-white`. No hardcoded colors.
+- **Mobile first, 320px minimum.** Base styles for mobile, then `sm:` → `md:` → `lg:` to scale up.
+- **Validate forms client-side** with Zod schemas before submitting.
+- **i18n everywhere.** `useTranslation()` in React — no hardcoded English strings, including inside shadcn/ui components.
+- **Dark mode always supported.** Light, dark, and system themes via `ThemeProvider`.
+- **Pages stay thin.** Over 100 lines → extract sub-components. Complex state → extract a hook.
+
+### Commits
+
+- **Conventional Commits:** `type(scope): description`
+- Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`, `perf`, `build`
+
+---
+
+## Review Checklist
+
+**Run this checklist before completing every task:**
+
+- [ ] Tests added/updated, `bundle exec rspec` passes
+- [ ] No hardcoded English — i18n keys used (both frontend and backend)
+- [ ] Frontend form validation present (Zod schema)
+- [ ] Backend params validated in interactor (no `validates` on models)
+- [ ] Inertia `<Link/>` for internal navigation
+- [ ] Routes from `usePage().props.routes` — no hardcoded paths
+- [ ] Imports use `@/` — no `../` parent imports
+- [ ] shadcn/ui for controls & cards (checked Blocks first)
+- [ ] Icons imported from `@/components/icons/` wrappers
+- [ ] Mobile-first, works at 320px, tablet handled at `md` breakpoint
+- [ ] Tailwind tokens (not hardcoded colors)
+- [ ] No secrets in code (use ENV)
+- [ ] Public endpoints have `allow_unauthenticated_access`
+- [ ] Class methods use `class << self` block
+- [ ] Bullet gem not flagging N+1 queries
+- [ ] `bundle exec rubocop` passes
+- [ ] `bun lint` passes
+- [ ] `bun lint:css` passes
+- [ ] `bun format:check` passes
+- [ ] `yamllint` passes on locale YAML files
+- [ ] Commit message follows Conventional Commits
 
 ---
 
 ## Non-Negotiables
 
 1. Small tasks (30-90 min chunks)
-2. Tests for behavior changes
-3. Never hardcode routes
-4. Use ENV for all secrets
-5. Update docs when adding features
+2. Tests for every behavior change
+3. Never hardcode routes or English strings
+4. Use ENV for all secrets and configuration
+5. Update docs when adding features or changing schema
+6. All linters must pass before committing
 
 ---
 
@@ -182,7 +254,7 @@ cp .env.example .env
 \`\`\`bash
 bin/rails db:create
 bin/rails db:migrate
-bin/rails db:seed  # Optional
+bin/rails db:seed  # Idempotent — safe to run multiple times
 \`\`\`
 
 ### 4. Start Dev Server
@@ -574,4 +646,14 @@ When creating a new project:
 12. [ ] Create .env.example
 13. [ ] Copy `.claude/hooks/post-commit-audit.sh` from playbook, customize design system checks
 14. [ ] Register hook in `.claude/settings.json` (see `~/.claude/rails-playbook/hooks/README.md`)
-15. [ ] Add all docs to .gitignore exclusion (should be committed)
+15. [ ] Create `.rubocop.yml` (from [code-quality.md](code-quality.md#rubocop) base template)
+16. [ ] Create `.rubocop_todo.yml` (empty file — generate later with `--auto-gen-config`)
+17. [ ] Create `eslint.config.mjs` (from [inertia-react.md](inertia-react.md#eslint--prettier))
+18. [ ] Create `.prettierrc` (from [inertia-react.md](inertia-react.md#eslint--prettier))
+19. [ ] Create `.prettierignore` (from [inertia-react.md](inertia-react.md#eslint--prettier))
+20. [ ] Create `.stylelintrc.json` (from [inertia-react.md](inertia-react.md#stylelint))
+21. [ ] Create `.yamllint.yml` (from [code-quality.md](code-quality.md#yamllint))
+22. [ ] Create `jsconfig.json` (from [inertia-react.md](inertia-react.md#path-alias----appfrontend) — `@` alias)
+23. [ ] Add lint/format scripts to `package.json`
+24. [ ] Verify all linters pass on fresh project (`rubocop`, `bun lint`, `bun lint:css`, `bun format:check`, `yamllint`)
+25. [ ] Add all docs to .gitignore exclusion (should be committed)

@@ -665,7 +665,7 @@ describe("validateSignupForm", () => {
   "$schema": "https://ui.shadcn.com/schema.json",
   "style": "default",
   "rsc": false,
-  "tsx": true,
+  "tsx": false,
   "tailwind": {
     "config": "tailwind.config.js",
     "css": "app/frontend/entrypoints/application.css",
@@ -1050,11 +1050,12 @@ import { IconClose } from "@/components/icons/close";
 
 ## Vite Config
 
-```ts
-// vite.config.ts
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+```js
+// vite.config.js
 import { fileURLToPath, URL } from "node:url";
+
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react()],
@@ -1069,16 +1070,56 @@ export default defineConfig({
 });
 ```
 
+### Path Alias — `@` → `app/frontend/`
+
+The `@` alias maps to `app/frontend/` so imports are always clean and absolute:
+
+```js
+// ✅ Good — use @ for anything outside the current directory tree
+import { Button } from "@/components/ui/button";
+import { validateEmail } from "@/lib/validators";
+import { useFlashToasts } from "@/lib/hooks/useFlashToasts";
+
+// ✅ Good — relative imports are OK for same directory or one level down
+import { formatDate } from "./utils";
+import { ColumnHeader } from "./columns/header";
+
+// ❌ Bad — never use ../ (parent-relative imports)
+import { Button } from "../../components/ui/button";
+import { formatDate } from "../utils";
+```
+
+**Rule: no `../` imports.** Use `@/` for anything outside the current directory. Relative imports (`./`) are only allowed for the same directory or one level down (`./x`, `./x/y`).
+
+### jsconfig.json (IDE Support)
+
+Since we don't use TypeScript, add a `jsconfig.json` at the project root so VS Code (and other editors) understand the `@` alias for autocompletion and go-to-definition:
+
+```json
+// jsconfig.json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["app/frontend/*"]
+    },
+    "jsx": "react-jsx"
+  },
+  "include": ["app/frontend/**/*"],
+  "exclude": ["node_modules", "public", "vendor", "tmp"]
+}
+```
+
 ---
 
-## ESLint + Prettier
+## ESLint + Prettier {#eslint--prettier}
 
 **ESLint for linting, Prettier for formatting.** They work together — ESLint catches code quality issues, Prettier handles all formatting decisions so you never argue about style.
 
 ### Installation
 
 ```bash
-bun add -d eslint prettier eslint-config-prettier eslint-plugin-react eslint-plugin-react-hooks @typescript-eslint/eslint-plugin @typescript-eslint/parser prettier-plugin-yaml
+bun add -d eslint eslint-config-prettier eslint-plugin-react eslint-plugin-react-hooks eslint-plugin-simple-import-sort eslint-plugin-import eslint-plugin-unused-imports prettier prettier-plugin-yaml
 ```
 
 ### ESLint Configuration
@@ -1086,41 +1127,97 @@ bun add -d eslint prettier eslint-config-prettier eslint-plugin-react eslint-plu
 ```js
 // eslint.config.mjs
 import js from "@eslint/js";
-import tsPlugin from "@typescript-eslint/eslint-plugin";
-import tsParser from "@typescript-eslint/parser";
+import { defineConfig, globalIgnores } from "eslint/config";
+import prettierConfig from "eslint-config-prettier";
+import importPlugin from "eslint-plugin-import";
 import reactPlugin from "eslint-plugin-react";
 import reactHooksPlugin from "eslint-plugin-react-hooks";
-import prettierConfig from "eslint-config-prettier";
+import simpleImportSort from "eslint-plugin-simple-import-sort";
+import unusedImports from "eslint-plugin-unused-imports";
 
-export default [
+const eslintConfig = defineConfig([
+  // 1. Base JS rules
   js.configs.recommended,
+
+  // 2. Global Ignores
+  globalIgnores([
+    "node_modules/**",
+    "public/**",
+    "vendor/**",
+    "tmp/**",
+    "coverage/**",
+  ]),
+
+  // 3. React + Import rules
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["**/*.js", "**/*.jsx"],
     languageOptions: {
-      parser: tsParser,
       parserOptions: {
         ecmaFeatures: { jsx: true },
+        sourceType: "module",
       },
     },
     plugins: {
-      "@typescript-eslint": tsPlugin,
       react: reactPlugin,
       "react-hooks": reactHooksPlugin,
+      "simple-import-sort": simpleImportSort,
+      import: importPlugin,
+      "unused-imports": unusedImports,
     },
     rules: {
-      ...tsPlugin.configs.recommended.rules,
+      // React
       ...reactPlugin.configs.recommended.rules,
       ...reactHooksPlugin.configs.recommended.rules,
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+
+      // Unused imports — auto-removable
+      "no-unused-vars": "off",
+      "unused-imports/no-unused-imports": "error",
+      "unused-imports/no-unused-vars": [
+        "warn",
+        {
+          vars: "all",
+          varsIgnorePattern: "^_",
+          args: "after-used",
+          argsIgnorePattern: "^_",
+        },
+      ],
+
+      // Import sorting — auto-fixable
+      "simple-import-sort/imports": "error",
+      "simple-import-sort/exports": "error",
+      "import/first": "error",
+      "import/newline-after-import": "error",
+      "import/no-duplicates": "error",
+
+      // No parent-relative imports — use @/ alias instead
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["../*"],
+              message: "Use @/ alias instead of ../. Relative imports are only allowed for ./x or ./x/y.",
+            },
+          ],
+        },
+      ],
+
+      // Disable conflicting rules
+      "import/order": "off",
+      "sort-imports": "off",
     },
     settings: {
       react: { version: "detect" },
     },
   },
-  prettierConfig, // Must be last — disables ESLint rules that conflict with Prettier
-];
+
+  // 4. Prettier — must be last (disables ESLint rules that conflict)
+  prettierConfig,
+]);
+
+export default eslintConfig;
 ```
 
 ### Prettier Configuration
@@ -1129,10 +1226,11 @@ export default [
 // .prettierrc
 {
   "semi": true,
-  "singleQuote": false,
-  "trailingComma": "all",
-  "printWidth": 100,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "printWidth": 80,
   "tabWidth": 2,
+  "useTabs": false,
   "plugins": ["prettier-plugin-yaml"],
   "overrides": [
     {
@@ -1157,6 +1255,7 @@ public
 vendor
 coverage
 tmp
+.git
 ```
 
 ### Scripts
@@ -1167,8 +1266,8 @@ tmp
   "scripts": {
     "lint": "eslint app/frontend/",
     "lint:fix": "eslint app/frontend/ --fix",
-    "format": "prettier --write 'app/frontend/**/*.{ts,tsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'",
-    "format:check": "prettier --check 'app/frontend/**/*.{ts,tsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'"
+    "format": "prettier --write 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'",
+    "format:check": "prettier --check 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'"
   }
 }
 ```
@@ -1176,24 +1275,29 @@ tmp
 ### Usage
 
 ```bash
-# Lint JS/TS
+# Lint JS
 bun lint
 
-# Auto-fix lint issues
+# Auto-fix lint issues (unused imports, sort order)
 bun lint:fix
 
-# Format all files (JS/TS/CSS/YAML)
+# Format all files (JS/CSS/YAML)
 bun format
 
 # Check formatting without writing (CI)
 bun format:check
 ```
 
-### Key points
+### Key Points
 
+- **No TypeScript.** We use plain JS/JSX everywhere. No `.ts`, `.tsx`, no TS parser, no TS plugin.
+- **`@` alias for imports.** `@` maps to `app/frontend/`. Use it for anything outside the current directory. No `../` imports ever — ESLint enforces this via `no-restricted-imports`.
+- **Relative imports: `./` only.** Same directory (`./utils`) or one level down (`./columns/header`) is fine. Anything else uses `@/`.
 - **`eslint-config-prettier` must be last** in the ESLint config — it disables all ESLint rules that Prettier handles.
 - **Prettier owns formatting.** Never add formatting rules (quotes, semicolons, indentation) to ESLint.
 - **ESLint owns code quality.** Unused vars, missing deps in hooks, unreachable code — that's ESLint's job.
+- **`simple-import-sort`** auto-sorts imports on `bun lint:fix`. No manual import ordering ever.
+- **`unused-imports`** auto-removes dead imports on `bun lint:fix`. Prefix intentionally unused vars with `_`.
 - **`prettier-plugin-yaml`** formats YAML locale files with the same `bun format` command. No separate YAML formatter needed.
 
 ---

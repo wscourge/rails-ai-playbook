@@ -99,7 +99,7 @@ end
 
 ---
 
-## Step 2: Extend User Model for OAuth
+## Step 3: Extend User Model for OAuth
 
 ```ruby
 # app/models/user.rb
@@ -110,13 +110,6 @@ class User < ApplicationRecord
   # OAuth UIDs
   attribute :google_uid, :string
   attribute :openai_uid, :string
-
-  # Validations
-  validates :email_address, presence: true, uniqueness: true
-  validates :password, length: { minimum: 8 }, allow_nil: true
-  validates :handle, uniqueness: true, allow_nil: true,
-    format: { with: /\A[a-z0-9][a-z0-9_-]*[a-z0-9]\z/, message: I18n.t("errors.handle_format") },
-    length: { minimum: 3, maximum: 30 }
 
   normalizes :email_address, with: ->(e) { e.strip.downcase }
   normalizes :handle, with: ->(h) { h.strip.downcase }
@@ -167,7 +160,7 @@ end
 
 ---
 
-## Step 3: Add OmniAuth
+## Step 4: Add OmniAuth
 
 ```ruby
 # Gemfile
@@ -199,7 +192,7 @@ OmniAuth.config.allowed_request_methods = [:post]
 
 ---
 
-## Step 4: OAuth Controller
+## Step 5: OAuth Controller
 
 ```ruby
 # app/controllers/oauth_controller.rb
@@ -240,7 +233,7 @@ get '/auth/failure', to: 'oauth#failure'
 
 ---
 
-## Step 5: Authentication Concern
+## Step 6: Authentication Concern
 
 The generated `Authentication` concern provides helper methods. Extend if needed:
 
@@ -308,7 +301,7 @@ end
 
 ---
 
-## Step 6: Current Model
+## Step 7: Current Model
 
 ```ruby
 # app/models/current.rb
