@@ -24,24 +24,47 @@ gem "interactor-rails", "~> 2.0"
 
 ### Directory Structure
 
+Organize interactors by domain. **Every interactor lives in a domain folder** — never at the root of `app/interactors/`.
+
 ```
 app/interactors/
 ├── users/
-│   ├── validate_signup_params.rb
-│   ├── create_user.rb
-│   ├── send_welcome_email.rb
-│   └── signup.rb              # Organizer
+│   ├── validate_signup_params.rb    # Users::ValidateSignupParams
+│   ├── create_user.rb               # Users::CreateUser
+│   ├── send_welcome_email.rb        # Users::SendWelcomeEmail
+│   ├── register.rb                  # Users::Register (organizer)
+│   └── oauth_login.rb               # Users::OauthLogin
 ├── billing/
-│   ├── validate_subscription_params.rb
-│   ├── create_stripe_customer.rb
-│   ├── create_subscription.rb
-│   └── subscribe.rb           # Organizer
-└── teams/
-    ├── validate_invite_params.rb
-    ├── create_invitation.rb
-    ├── send_invite_email.rb
-    └── invite_member.rb       # Organizer
+│   ├── validate_subscription.rb     # Billing::ValidateSubscription
+│   ├── create_stripe_customer.rb    # Billing::CreateStripeCustomer
+│   ├── create_subscription.rb       # Billing::CreateSubscription
+│   ├── get_invoices.rb              # Billing::GetInvoices
+│   └── subscribe.rb                 # Billing::Subscribe (organizer)
+├── profiles/
+│   ├── create.rb                    # Profiles::Create
+│   ├── update.rb                    # Profiles::Update
+│   └── validate_update.rb           # Profiles::ValidateUpdate
+├── settings/
+│   └── update_preferences.rb        # Settings::UpdatePreferences
+├── passwords/
+│   ├── request_reset.rb             # Passwords::RequestReset
+│   └── reset.rb                     # Passwords::Reset
+├── sessions/
+│   ├── create.rb                    # Sessions::Create
+│   └── destroy.rb                   # Sessions::Destroy
+└── staff/
+    ├── users/                       # Staff::Users::*
+    │   ├── suspend.rb
+    │   └── unsuspend.rb
+    └── contact_requests/
+        └── mark_read.rb
 ```
+
+**Rules:**
+- Domain folder names are **plural** (`users/`, `billing/`, `profiles/`)
+- Class names match the folder path (`app/interactors/users/create_user.rb` → `Users::CreateUser`)
+- Nested domains use nested folders (`staff/users/suspend.rb` → `Staff::Users::Suspend`)
+- No interactors at root level — always namespace by domain
 
 ---
 

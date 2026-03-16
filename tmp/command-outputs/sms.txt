@@ -1,0 +1,49 @@
+/Users/me/ws/tzif.io/health/app/models/notification_type.rb:4:  CHANNELS = %w[in_app email sms].freeze
+/Users/me/ws/tzif.io/health/app/models/notification_type.rb:37:  # @param channel [String] "in_app", "email", "sms"
+/Users/me/ws/tzif.io/health/app/models/notification_type.rb:39:  # @param part [String, nil] For email: "subject" or "body"; nil for in_app/sms
+/Users/me/ws/tzif.io/health/app/models/notification_type.rb:48:          when "sms" then "template_sms_#{locale}"
+/Users/me/ws/tzif.io/health/app/configs/sms_config.rb:4:# Loaded from environment variables and config/sms.yml
+/Users/me/ws/tzif.io/health/app/configs/sms_config.rb:16:  config_name :sms
+/Users/me/ws/tzif.io/health/app/interactors/contact/send_phone_verification.rb:32:      deliver_sms(context.user.phone_number, code)
+/Users/me/ws/tzif.io/health/app/interactors/contact/send_phone_verification.rb:39:    def deliver_sms(phone_number, code)
+/Users/me/ws/tzif.io/health/app/interactors/contact/send_phone_verification.rb:42:      message = I18n.t("sms.phone_verification.message", code: code)
+/Users/me/ws/tzif.io/health/app/interactors/seeding/seed_notification_types.rb:25:        template_sms_en: "LabTrack: Critical result for {{profile_name}} — {{test_name}}: {{value}} {{unit}}",
+/Users/me/ws/tzif.io/health/app/interactors/seeding/seed_notification_types.rb:26:        template_sms_pl: "LabTrack: Wynik krytyczny dla {{profile_name}} — {{test_name}}: {{value}} {{unit}}",
+/Users/me/ws/tzif.io/health/app/interactors/seeding/seed_notification_types.rb:28:        available_channels: %w[in_app email sms],
+/Users/me/ws/tzif.io/health/app/interactors/seeding/seed_notification_types.rb:96:        available_channels: %w[in_app email sms],
+/Users/me/ws/tzif.io/health/app/interactors/staff/notification_types/create.rb:40:          template_sms_en: context.params[:template_sms_en].presence,
+/Users/me/ws/tzif.io/health/app/interactors/staff/notification_types/create.rb:41:          template_sms_pl: context.params[:template_sms_pl].presence,
+/Users/me/ws/tzif.io/health/app/interactors/staff/notification_types/update.rb:45:        attrs[:template_sms_en] = p[:template_sms_en].presence if p.key?(:template_sms_en)
+/Users/me/ws/tzif.io/health/app/interactors/staff/notification_types/update.rb:46:        attrs[:template_sms_pl] = p[:template_sms_pl].presence if p.key?(:template_sms_pl)
+/Users/me/ws/tzif.io/health/app/interactors/notifications/deliver.rb:19:      when "sms"
+/Users/me/ws/tzif.io/health/app/interactors/notifications/deliver.rb:20:        deliver_sms(notification)
+/Users/me/ws/tzif.io/health/app/interactors/notifications/deliver.rb:41:    def deliver_sms(notification)
+/Users/me/ws/tzif.io/health/app/interactors/notifications/deliver.rb:48:      SmsSender.send_sms(
+/Users/me/ws/tzif.io/health/app/interactors/notifications/send.rb:88:                 when "sms"
+/Users/me/ws/tzif.io/health/app/interactors/notifications/send.rb:89:                   context.notification_type.template_for(channel: "sms", locale: locale)
+/Users/me/ws/tzif.io/health/app/controllers/staff/notification_types_controller.rb:68:                      :template_sms_en, :template_sms_pl,
+/Users/me/ws/tzif.io/health/app/controllers/staff/notification_types_controller.rb:89:        template_sms_en: nt.template_sms_en,
+/Users/me/ws/tzif.io/health/app/controllers/staff/notification_types_controller.rb:90:        template_sms_pl: nt.template_sms_pl,
+/Users/me/ws/tzif.io/health/app/services/sms_sender.rb:9:# POST https://api.brevo.com/v3/transactionalSMS/sms
+/Users/me/ws/tzif.io/health/app/services/sms_sender.rb:12:#   SmsSender.send_sms(
+/Users/me/ws/tzif.io/health/app/services/sms_sender.rb:17:# @see https://developers.brevo.com/reference/sendtransacsms
+/Users/me/ws/tzif.io/health/app/services/sms_sender.rb:20:  BREVO_SMS_ENDPOINT = "https://api.brevo.com/v3/transactionalSMS/sms"
+/Users/me/ws/tzif.io/health/app/services/sms_sender.rb:30:    def send_sms(to:, content:, sender: nil)
+/Users/me/ws/tzif.io/health/app/services/sms_sender.rb:31:      config = Config.sms
+/Users/me/ws/tzif.io/health/config/initializers/anyway_config.rb:27:Rails.application.config.x.sms = SmsConfig.new
+/Users/me/ws/tzif.io/health/config/initializers/anyway_config.rb:57:    def sms
+/Users/me/ws/tzif.io/health/config/initializers/anyway_config.rb:58:      Rails.application.config.x.sms
+/Users/me/ws/tzif.io/health/spec/models/notification_type_spec.rb:49:      expect(nt.channel_available?("sms")).to be false
+/Users/me/ws/tzif.io/health/spec/factories/notification_types.rb:17:    template_sms_en { "SMS for {{name}}" }
+/Users/me/ws/tzif.io/health/spec/factories/notification_types.rb:18:    template_sms_pl { "SMS dla {{name}}" }
+/Users/me/ws/tzif.io/health/spec/factories/notification_types.rb:25:    trait :with_sms do
+/Users/me/ws/tzif.io/health/spec/factories/notification_types.rb:26:      available_channels { %w[in_app email sms] }
+/Users/me/ws/tzif.io/health/spec/factories/notification_types.rb:27:      default_channels { %w[in_app email sms] }
+/Users/me/ws/tzif.io/health/spec/factories/notification_preferences.rb:18:    trait :sms do
+/Users/me/ws/tzif.io/health/spec/factories/notification_preferences.rb:19:      channel { "sms" }
+/Users/me/ws/tzif.io/health/spec/factories/notifications.rb:37:    trait :sms do
+/Users/me/ws/tzif.io/health/spec/factories/notifications.rb:38:      channel { "sms" }
+/Users/me/ws/tzif.io/health/db/schema.rb:471:    t.text "template_sms_en"
+/Users/me/ws/tzif.io/health/db/schema.rb:472:    t.text "template_sms_pl"
+/Users/me/ws/tzif.io/health/db/migrate/20260304134725_create_notification_types.rb:18:      t.text :template_sms_en
+/Users/me/ws/tzif.io/health/db/migrate/20260304134725_create_notification_types.rb:19:      t.text :template_sms_pl

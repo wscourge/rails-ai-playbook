@@ -1,0 +1,10 @@
+anyway_config.rb
+assets.rb
+content_security_policy.rb
+filter_parameter_logging.rb
+inertia.rb
+inflections.rb
+omniauth.rb
+pay.rb
+sentry.rb
+strong_migrations.rb

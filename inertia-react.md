@@ -21,6 +21,23 @@
 
 ---
 
+## File Naming Convention
+
+**All frontend files use kebab-case.** Every `.js`, `.jsx`, `.ts`, `.tsx` file — pages, components, hooks, utils — must be lowercase with hyphens. No PascalCase, no camelCase filenames.
+
+| Pattern | Example | Wrong |
+|---------|---------|-------|
+| Pages | `forgot-password.jsx` | ~~ForgotPassword.jsx~~ |
+| Components | `error-boundary.jsx` | ~~ErrorBoundary.jsx~~ |
+| Layouts | `app-layout.jsx` | ~~AppLayout.jsx~~ |
+| Hooks | `use-flash-toasts.js` | ~~useFlashToasts.js~~ |
+| Utilities | `validators.js` | (already fine) |
+| Icons | `arrow-left.jsx` | (already fine) |
+
+Directories also use **kebab-case** (all lowercase). Inertia page names from Rails (`Auth/Login`) are automatically converted to kebab-case file paths (`auth/login.jsx`) by the resolve function.
+
+---
+
 ## Project Structure
 
 ```
@@ -30,14 +47,14 @@ app/frontend/
 │   ├── application.css      # Tailwind @theme tokens
 │   └── inertia.jsx          # Inertia app setup
 ├── pages/
-│   ├── Home.jsx             # Landing page
-│   ├── Pricing.jsx          # Pricing page
-│   ├── Auth/
-│   │   ├── Login.jsx
-│   │   └── Signup.jsx
-│   └── App/
-│       ├── Dashboard.jsx
-│       └── Settings.jsx
+│   ├── home.jsx             # Landing page
+│   ├── pricing.jsx          # Pricing page
+│   ├── auth/
+│   │   ├── login.jsx
+│   │   └── signup.jsx
+│   └── app/
+│       ├── dashboard.jsx
+│       └── settings.jsx
 ├── components/
 │   ├── ui/                  # shadcn/ui components (all installed)
 │   ├── icons/               # Icon wrappers (one per icon)
@@ -45,17 +62,17 @@ app/frontend/
 │   │   ├── plus.tsx
 │   │   ├── check.tsx
 │   │   └── ...              # Every icon used in the app
-│   ├── ThemeProvider.tsx     # Light/dark/system theme context
-│   ├── ThemeToggle.tsx       # Theme switcher dropdown
+│   ├── theme-provider.tsx   # Light/dark/system theme context
+│   ├── theme-toggle.tsx     # Theme switcher dropdown
 │   ├── marketing/           # Landing page components
 │   ├── app/                 # App-specific components
-│   └── ErrorBoundary.jsx    # Error handling
+│   └── error-boundary.jsx   # Error handling
 ├── layout/
-│   └── AppLayout.jsx        # Authenticated shell
+│   └── app-layout.jsx       # Authenticated shell
 └── lib/
     ├── utils.js             # cn() helper
     └── hooks/
-        └── useFlashToasts.ts # Rails flash → Sonner toasts
+        └── use-flash-toasts.ts # Rails flash → Sonner toasts
 ```
 
 ---
@@ -173,7 +190,7 @@ app/frontend/
 
 @layer base {
   * { @apply border-border; }
-  html, body { height: 100%; }
+  html, body { height: 100%; overscroll-behavior: none; }
   body {
     @apply bg-background text-foreground antialiased font-body;
   }
@@ -195,7 +212,7 @@ app/frontend/
 ### ThemeProvider
 
 ```tsx
-// app/frontend/components/ThemeProvider.tsx
+// app/frontend/components/theme-provider.tsx
 import { createContext, useContext, useEffect, useState } from "react";
 
 type Theme = "light" | "dark" | "system";
@@ -254,14 +271,34 @@ export const useTheme = () => useContext(ThemeContext);
 
 ### Wrap the Inertia App
 
-```tsx
+```jsx
 // app/frontend/entrypoints/inertia.jsx
-import { ThemeProvider } from "@/components/ThemeProvider";
+import { createRoot } from "react-dom/client";
+import { createInertiaApp } from "@inertiajs/react";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { initConfig } from "@/lib/config";
 
 createInertiaApp({
-  // ...
+  resolve: (name) => {
+    const pages = import.meta.glob("../pages/**/*.jsx", { eager: true });
+    // Convert PascalCase page names from Rails to kebab-case file paths
+    // e.g. "Auth/ForgotPassword" → "auth/forgot-password"
+    const kebab = name
+      .split("/")
+      .map((segment) =>
+        segment
+          .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+          .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2")
+          .toLowerCase()
+      )
+      .join("/");
+    return pages[`../pages/${kebab}.jsx`];
+  },
   setup({ el, App, props }) {
+    // Initialize config from server props (validated via Zod)
+    initConfig(props.initialPage.props.config);
+
     createRoot(el).render(
       <ThemeProvider>
         <App {...props} />
@@ -292,8 +329,8 @@ Add an inline script in the HTML head so the class is set before React hydrates:
 ### Theme Toggle Component
 
 ```tsx
-// app/frontend/components/ThemeToggle.tsx
-import { useTheme } from "@/components/ThemeProvider";
+// app/frontend/components/theme-toggle.tsx
+import { useTheme } from "@/components/theme-provider";
 import { useTranslation } from "react-i18next";
 import { IconSun } from "@/components/icons/sun";
 import { IconMoon } from "@/components/icons/moon";
@@ -537,6 +574,70 @@ function ContactForm() {
 bun add zod
 ```
 
+### Configuration Schema
+
+Server-side config (Stripe keys, feature flags, etc.) is shared via `inertia_share` and validated with Zod on app mount. See [env-template.md](env-template.md#frontend-zod-schema) for the full pattern.
+
+```js
+// app/frontend/lib/config.js
+import { z } from "zod";
+
+const ConfigSchema = z.object({
+  app: z.object({
+    name: z.string(),
+    url: z.string().url(),
+  }),
+  stripe: z.object({
+    publicKey: z.string().startsWith("pk_"),
+  }),
+  googleOAuth: z.object({
+    enabled: z.boolean(),
+  }),
+  sentry: z.object({
+    dsn: z.string().nullable(),
+    enabled: z.boolean(),
+  }),
+  analytics: z.object({
+    gaMeasurementId: z.string().nullable(),
+  }),
+});
+
+let _config = null;
+
+export function initConfig(rawConfig) {
+  _config = ConfigSchema.parse(rawConfig);
+  return _config;
+}
+
+export function getConfig() {
+  if (!_config) {
+    throw new Error("Config not initialized. Call initConfig() in inertia.jsx first.");
+  }
+  return _config;
+}
+
+// Convenience accessor
+export const config = {
+  get app() { return getConfig().app; },
+  get stripe() { return getConfig().stripe; },
+  get googleOAuth() { return getConfig().googleOAuth; },
+  get sentry() { return getConfig().sentry; },
+  get analytics() { return getConfig().analytics; },
+};
+```
+
+Usage:
+
+```jsx
+import { config } from "@/lib/config";
+
+// In any component
+<h1>{config.app.name}</h1>
+
+// Conditional features
+{config.googleOAuth.enabled && <GoogleSignInButton />}
+```
+
 ### Validation Schemas
 
 ```ts
@@ -746,6 +847,27 @@ export function cn(...inputs) {
 }
 ```
 
+### Class Formatting Convention
+
+When combining multiple Tailwind classes with `cn()`, pass each class as a separate string on its own line. This makes it easy to comment out individual classes for debugging:
+
+```jsx
+// Good - one class per line
+className={cn(
+  'flex',
+  'items-center',
+  'justify-between',
+  'gap-4',
+  'px-4',
+  'py-2',
+  // 'bg-red-500', // debug - easy to toggle
+  isActive && 'bg-primary',
+)}
+
+// Avoid - hard to comment out individual classes
+className={cn('flex items-center justify-between gap-4 px-4 py-2', isActive && 'bg-primary')}
+```
+
 ---
 
 ## Responsive Design
@@ -827,7 +949,7 @@ export default function Dashboard() {
 Rails flash messages (`notice`, `alert`) are automatically converted to Sonner toasts. The `useFlashToasts` hook watches for flash changes on every Inertia page visit and fires the appropriate toast.
 
 ```tsx
-// app/frontend/lib/hooks/useFlashToasts.ts
+// app/frontend/lib/hooks/use-flash-toasts.ts
 import { usePage } from "@inertiajs/react";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -853,7 +975,7 @@ export function useFlashToasts() {
 Call `useFlashToasts()` once in each layout — it handles both `notice` (success) and `alert` (error):
 
 ```jsx
-import { useFlashToasts } from "@/lib/hooks/useFlashToasts";
+import { useFlashToasts } from "@/lib/hooks/use-flash-toasts";
 
 export default function AppLayout({ children }) {
   useFlashToasts();
@@ -922,7 +1044,7 @@ toast.promise(saveSettings(), {
 ```jsx
 import { Link, usePage } from "@inertiajs/react";
 import { Button } from "@/components/ui/button";
-import { useFlashToasts } from "@/lib/hooks/useFlashToasts";
+import { useFlashToasts } from "@/lib/hooks/use-flash-toasts";
 
 export default function AppLayout({ children }) {
   useFlashToasts();
@@ -1048,6 +1170,213 @@ import { IconClose } from "@/components/icons/close";
 
 ---
 
+## Server-Side Data Tables
+
+For tables with large datasets, use server-side pagination with URL-synced state. This approach:
+
+1. Makes filtered/sorted views **shareable via URL**
+2. Keeps **initial page loads fast** (only loads one page of data)
+3. **Survives page refresh** (state is in URL, not component state)
+
+### Backend Setup
+
+Use the `Indexable` concern in controllers (see [code-quality.md](code-quality.md#index--list-endpoints)):
+
+```ruby
+class Staff::UsersController < Staff::BaseController
+  include Indexable
+
+  def index
+    users = User.order(sort_column => sort_direction)
+    users = users.search(search_query) if search_query.present?
+    users = users.where(status: filters[:status]) if filters[:status].present?
+    users = users.page(current_page).per(per_page)
+
+    render inertia: "Staff/Users/Index", props: {
+      users: serialize(users),
+      pagination: {
+        page: current_page,
+        per_page: per_page,
+        total_pages: users.total_pages,
+        total_count: users.total_count,
+        search: search_query,
+        sort: sort_column,
+        sort_direction: sort_direction,
+        filters: filters,
+      },
+    }
+  end
+end
+```
+
+### Frontend Hook
+
+```javascript
+// app/frontend/hooks/use-server-data-table.js
+import { router } from '@inertiajs/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+export function useServerDataTable({
+  data = [],
+  pagination = {},
+  endpoint = null,
+  preserveState = true,
+  searchDebounce = 300,
+}) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [localSearch, setLocalSearch] = useState(pagination.search || '');
+  const searchTimeoutRef = useRef(null);
+
+  // Build query params from pagination state
+  const buildParams = useCallback(
+    (overrides = {}) => {
+      const merged = {
+        search: pagination.search || '',
+        page: pagination.page || 1,
+        per_page: pagination.per_page || 25,
+        sort: pagination.sort || '',
+        sort_direction: pagination.sort_direction || 'asc',
+        filter: pagination.filters || {},
+        ...overrides,
+      };
+
+      // Clean up empty values
+      const params = {};
+      if (merged.search) params.search = merged.search;
+      if (merged.page > 1) params.page = merged.page;
+      if (merged.per_page !== 25) params.per_page = merged.per_page;
+      if (merged.sort) {
+        params.sort = merged.sort;
+        params.sort_direction = merged.sort_direction;
+      }
+      if (merged.filter && Object.keys(merged.filter).length > 0) {
+        params.filter = {};
+        for (const [k, v] of Object.entries(merged.filter)) {
+          if (v && v !== '__all__') params.filter[k] = v;
+        }
+        if (Object.keys(params.filter).length === 0) delete params.filter;
+      }
+      return params;
+    },
+    [pagination]
+  );
+
+  // Navigate with Inertia, preserving URL state
+  const navigate = useCallback(
+    (overrides = {}) => {
+      setIsLoading(true);
+      const params = buildParams(overrides);
+      router.get(endpoint || window.location.pathname, params, {
+        preserveState,
+        preserveScroll: true,
+        onFinish: () => setIsLoading(false),
+      });
+    },
+    [buildParams, endpoint, preserveState]
+  );
+
+  // Debounced search
+  const setSearch = useCallback(
+    (value) => {
+      setLocalSearch(value);
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = setTimeout(() => {
+        navigate({ search: value, page: 1 });
+      }, searchDebounce);
+    },
+    [navigate, searchDebounce]
+  );
+
+  // Three-state sort toggle: null → asc → desc → null
+  const toggleSort = useCallback(
+    (key) => {
+      const { sort, sort_direction } = pagination;
+      let newSort = key, newDirection = 'asc';
+      if (sort === key) {
+        if (sort_direction === 'asc') newDirection = 'desc';
+        else { newSort = ''; newDirection = ''; }
+      }
+      navigate({ sort: newSort, sort_direction: newDirection, page: 1 });
+    },
+    [navigate, pagination.sort, pagination.sort_direction]
+  );
+
+  const setFilter = useCallback(
+    (key, value) => {
+      navigate({ filter: { ...pagination.filters, [key]: value }, page: 1 });
+    },
+    [navigate, pagination.filters]
+  );
+
+  const clearFilters = useCallback(() => {
+    setLocalSearch('');
+    navigate({ search: '', filter: {}, page: 1 });
+  }, [navigate]);
+
+  const setPage = useCallback((n) => navigate({ page: n }), [navigate]);
+  const setPerPage = useCallback((n) => navigate({ per_page: n, page: 1 }), [navigate]);
+
+  return {
+    data,
+    totalItems: pagination.total_count || data.length,
+    search: localSearch,
+    setSearch,
+    sort: pagination.sort ? { key: pagination.sort, direction: pagination.sort_direction } : null,
+    toggleSort,
+    filters: pagination.filters || {},
+    setFilter,
+    clearFilters,
+    hasActiveFilters: !!(localSearch || Object.values(pagination.filters || {}).some(v => v && v !== '__all__')),
+    page: pagination.page || 1,
+    perPage: pagination.per_page || 25,
+    totalPages: pagination.total_pages || 1,
+    setPage,
+    setPerPage,
+    isLoading,
+  };
+}
+```
+
+### Usage in Pages
+
+```jsx
+// app/frontend/pages/staff/users/index.jsx
+import { useServerDataTable } from '@/hooks/use-server-data-table';
+import { DataTable } from '@/components/data-table';
+
+export default function UsersIndex({ users, pagination }) {
+  const table = useServerDataTable({ data: users, pagination });
+
+  return (
+    <DataTable
+      data={table.data}
+      columns={columns}
+      search={table.search}
+      onSearchChange={table.setSearch}
+      sort={table.sort}
+      onSortChange={table.toggleSort}
+      page={table.page}
+      totalPages={table.totalPages}
+      onPageChange={table.setPage}
+      isLoading={table.isLoading}
+    />
+  );
+}
+```
+
+### URL Examples
+
+```
+/staff/users                                    # Default view
+/staff/users?search=john                        # Filtered by search
+/staff/users?sort=created_at&sort_direction=desc  # Sorted
+/staff/users?filter[status]=active&page=2       # Filtered + paginated
+```
+
+Users can bookmark or share these URLs, and the exact view will be restored.
+
+---
+
 ## Vite Config
 
 ```js
@@ -1078,7 +1407,7 @@ The `@` alias maps to `app/frontend/` so imports are always clean and absolute:
 // ✅ Good — use @ for anything outside the current directory tree
 import { Button } from "@/components/ui/button";
 import { validateEmail } from "@/lib/validators";
-import { useFlashToasts } from "@/lib/hooks/useFlashToasts";
+import { useFlashToasts } from "@/lib/hooks/use-flash-toasts";
 
 // ✅ Good — relative imports are OK for same directory or one level down
 import { formatDate } from "./utils";
@@ -1264,10 +1593,8 @@ tmp
 // package.json (scripts)
 {
   "scripts": {
-    "lint": "eslint app/frontend/",
-    "lint:fix": "eslint app/frontend/ --fix",
-    "format": "prettier --write 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'",
-    "format:check": "prettier --check 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml'"
+    "lint:js": "prettier --check 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml' && eslint app/frontend/",
+    "lint:js:fix": "prettier --write 'app/frontend/**/*.{js,jsx,css}' 'config/locales/**/*.yml' 'app/frontend/locales/**/*.yml' && eslint app/frontend/ --fix"
   }
 }
 ```
@@ -1275,17 +1602,11 @@ tmp
 ### Usage
 
 ```bash
-# Lint JS
-bun lint
+# Check formatting + lint JS (Prettier first, then ESLint)
+bun lint:js
 
-# Auto-fix lint issues (unused imports, sort order)
-bun lint:fix
-
-# Format all files (JS/CSS/YAML)
-bun format
-
-# Check formatting without writing (CI)
-bun format:check
+# Auto-fix formatting + lint issues (sorts imports, removes unused)
+bun lint:js:fix
 ```
 
 ### Key Points
@@ -1296,9 +1617,9 @@ bun format:check
 - **`eslint-config-prettier` must be last** in the ESLint config — it disables all ESLint rules that Prettier handles.
 - **Prettier owns formatting.** Never add formatting rules (quotes, semicolons, indentation) to ESLint.
 - **ESLint owns code quality.** Unused vars, missing deps in hooks, unreachable code — that's ESLint's job.
-- **`simple-import-sort`** auto-sorts imports on `bun lint:fix`. No manual import ordering ever.
-- **`unused-imports`** auto-removes dead imports on `bun lint:fix`. Prefix intentionally unused vars with `_`.
-- **`prettier-plugin-yaml`** formats YAML locale files with the same `bun format` command. No separate YAML formatter needed.
+- **`simple-import-sort`** auto-sorts imports on `bun lint:js:fix`. No manual import ordering ever.
+- **`unused-imports`** auto-removes dead imports on `bun lint:js:fix`. Prefix intentionally unused vars with `_`.
+- **`prettier-plugin-yaml`** formats YAML locale files as part of the `bun lint:js:fix` command. No separate YAML formatter needed.
 
 ---
 
@@ -1419,6 +1740,5 @@ end
 13. **Test validators with Jest** - pure logic, no React rendering needed
 14. **Dark mode always supported** - system default, light/dark toggle via `ThemeProvider` + `ThemeToggle`
 15. **Stylelint for all CSS** - run `bun lint:css` before committing, Tailwind directives are allowlisted
-16. **ESLint for code quality** - `bun lint` catches errors, unused vars, and hook issues
-17. **Prettier for formatting** - `bun format` auto-formats JS/TS/CSS/YAML — no manual style debates
-18. **Bun for everything JS** - `bun add`, `bun install`, `bun test`, `bunx` — never npm/npx, there's no package-lock.json
+16. **Prettier + ESLint in one command** - `bun lint:js` checks formatting then lints; `bun lint:js:fix` auto-fixes both
+17. **Bun for everything JS** - `bun add`, `bun install`, `bun test`, `bunx` — never npm/npx, there's no package-lock.json

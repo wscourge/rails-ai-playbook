@@ -112,7 +112,12 @@ class User < ApplicationRecord
   attribute :openai_uid, :string
 
   normalizes :email_address, with: ->(e) { e.strip.downcase }
-  normalizes :handle, with: ->(h) { h.strip.downcase }
+  normalizes :handle, with: ->(h) { h.strip.downcase.gsub(/[^a-z0-9_-]/, "") }
+
+  # Token-based email verification (Rails 7.1+)
+  generates_token_for :email_verification, expires_in: 24.hours do
+    email_verified_at
+  end
 
   def full_name
     [first_name, last_name].compact.join(" ").presence || email_address.split("@").first
@@ -121,6 +126,11 @@ class User < ApplicationRecord
   def initials
     full_name.split.map(&:first).join.upcase[0, 2]
   end
+
+  # Auth predicates
+  def oauth_user? = google_uid.present?
+  def password_user? = password_digest.present?
+  def email_verified? = email_verified_at.present?
 
   # Find or create from OAuth
   def self.find_or_create_from_oauth(auth)
@@ -176,23 +186,38 @@ gem 'omniauth-oauth2'
 # config/initializers/omniauth.rb
 Rails.application.config.middleware.use OmniAuth::Builder do
   provider :google_oauth2,
-    ENV['GOOGLE_CLIENT_ID'],
-    ENV['GOOGLE_CLIENT_SECRET'],
+    OAuthConfig.google_client_id,
+    OAuthConfig.google_client_secret,
     {
       scope: 'email,profile',
       prompt: 'select_account'
     }
 
   # Add OpenAI if needed (requires custom strategy)
-  # provider :openai, ENV['OPENAI_CLIENT_ID'], ENV['OPENAI_CLIENT_SECRET']
+  # provider :openai, OAuthConfig.openai_client_id, OAuthConfig.openai_client_secret
 end
 
 OmniAuth.config.allowed_request_methods = [:post]
 ```
 
+See [anyway-config.md](anyway-config.md) for the `OAuthConfig` class definition.
+
 ---
 
 ## Step 5: OAuth Controller
+
+Use an interactor to encapsulate the OAuth login logic:
+
+```ruby
+# app/interactors/users/oauth_login.rb
+class Users::OauthLogin
+  include Interactor
+
+  def call
+    context.user = User.find_or_create_from_oauth(context.auth)
+  end
+end
+```
 
 ```ruby
 # app/controllers/oauth_controller.rb
@@ -200,11 +225,11 @@ class OauthController < ApplicationController
   allow_unauthenticated_access
 
   def callback
-    auth = request.env['omniauth.auth']
-    user = User.find_or_create_from_oauth(auth)
+    result = Users::OauthLogin.call(auth: request.env["omniauth.auth"])
+    user = result.user
 
     start_new_session_for(user)
-    set_last_login_method(auth.provider)  # "Last used" indicator
+    set_last_login_method(result.auth.provider)
     redirect_to after_login_path, notice: "Welcome, #{user.first_name}!"
   end
 
@@ -320,6 +345,89 @@ end
 3. **`Current.user`** — Access authenticated user anywhere
 4. **Session tracking** — Each login creates a Session record
 5. **`allow_unauthenticated_access`** — Explicitly mark public actions
+6. **Rate limiting** — Protect auth endpoints from brute force
+
+---
+
+## Registration Flow (Interactor Organizer)
+
+Use an organizer to orchestrate multi-step registration:
+
+```ruby
+# app/interactors/users/register.rb
+class Users::Register
+  include Interactor::Organizer
+
+  around do |interactor|
+    ActiveRecord::Base.transaction do
+      interactor.call
+    rescue Interactor::Failure
+      raise ActiveRecord::Rollback
+    end
+  end
+
+  organize Users::ValidateRegistration,
+           Users::CreateUser,
+           Users::SendVerification
+end
+```
+
+```ruby
+# app/interactors/users/validate_registration.rb
+class Users::ValidateRegistration
+  include Interactor
+
+  def call
+    validate_email_format
+    validate_email_unique
+    validate_password_strength
+  end
+
+  private
+
+  def validate_email_format
+    unless context.email.to_s.match?(URI::MailTo::EMAIL_REGEXP)
+      context.fail!(error: I18n.t("errors.invalid_email"))
+    end
+  end
+
+  def validate_email_unique
+    if User.exists?(email_address: context.email.downcase)
+      context.fail!(error: I18n.t("errors.email_taken"))
+    end
+  end
+
+  def validate_password_strength
+    if context.password.to_s.length < 8
+      context.fail!(error: I18n.t("errors.password_too_short"))
+    end
+  end
+end
+```
+
+```ruby
+# app/controllers/registrations_controller.rb
+class RegistrationsController < ApplicationController
+  allow_unauthenticated_access
+
+  def create
+    result = Users::Register.call(
+      email: params[:email],
+      password: params[:password],
+      first_name: params[:first_name],
+      last_name: params[:last_name]
+    )
+
+    if result.success?
+      start_new_session_for(result.user)
+      set_last_login_method("password")
+      redirect_to after_signup_path
+    else
+      redirect_to signup_path, inertia: { errors: { base: result.error } }
+    end
+  end
+end
+```
 
 ---
 
@@ -389,8 +497,8 @@ private
 
 def enabled_oauth_providers
   providers = []
-  providers << { key: "google_oauth2", name: "Google" } if ENV["GOOGLE_CLIENT_ID"].present?
-  # providers << { key: "openai", name: "OpenAI" } if ENV["OPENAI_CLIENT_ID"].present?
+  providers << { key: "google_oauth2", name: "Google" } if OAuthConfig.google_client_id.present?
+  # providers << { key: "openai", name: "OpenAI" } if OAuthConfig.openai_client_id.present?
   providers
 end
 ```
@@ -398,7 +506,7 @@ end
 ### Login Page with "Last Used" Badge
 
 ```jsx
-// app/frontend/pages/Auth/Login.jsx
+// app/frontend/pages/auth/login.jsx
 
 import { Head, useForm, usePage } from "@inertiajs/react";
 import { useTranslation } from "react-i18next";
@@ -554,6 +662,38 @@ end
 
 # After login:
 redirect_to session.delete(:return_to) || app_path
+```
+
+### Rate Limiting Auth Endpoints
+
+Protect login and registration from brute force attacks:
+
+```ruby
+# app/controllers/sessions_controller.rb
+class SessionsController < ApplicationController
+  allow_unauthenticated_access
+  rate_limit to: 10, within: 3.minutes, only: :create, with: -> { 
+    redirect_to login_path, alert: I18n.t("auth.too_many_attempts") 
+  }
+
+  # ...
+end
+
+# app/controllers/registrations_controller.rb
+class RegistrationsController < ApplicationController
+  allow_unauthenticated_access
+  rate_limit to: 5, within: 1.minute, only: :create, with: -> {
+    redirect_to signup_path, alert: I18n.t("auth.too_many_attempts")
+  }
+
+  # ...
+end
+```
+
+```yaml
+# app/frontend/locales/en/auth.yml
+auth:
+  too_many_attempts: Too many attempts. Please wait a few minutes and try again.
 ```
 
 ### Check authentication in views

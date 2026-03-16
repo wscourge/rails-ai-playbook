@@ -1,6 +1,8 @@
 # Brand Interview
 
 > Questions to ask before building any new app. Answers go into `docs/DESIGN.md`.
+> 
+> **Scope:** This interview covers visual design and brand identity only. Technical questions (auth, payments, notifications, i18n, etc.) are asked in [_PLAYBOOK_NEW_PROJECT.md](_PLAYBOOK_NEW_PROJECT.md#step-1-interview-me).
 
 ---
 
@@ -65,6 +67,13 @@
 13. **Any brand assets already?** (logo, colors, fonts)
 14. **Accessibility requirements?** (WCAG level, specific needs)
 15. **Mobile-first or desktop-first?**
+
+### Layout & Navigation
+
+16. **Header elements?** (logo, nav links, user menu, theme toggle, language toggle, notification bell)
+17. **Footer content?** (links, social icons, copyright, newsletter signup?)
+18. **Empty states style?** (minimal text, illustrations, helpful CTAs?)
+19. **Data-heavy views?** (tables with many columns, dashboards, analytics — affects density and spacing choices)
 
 ---
 

@@ -1,0 +1,61 @@
+# frozen_string_literal: true
+
+# SMS delivery configuration via Brevo Transactional SMS API
+# Loaded from environment variables and config/sms.yml
+#
+# @example
+#   SmsConfig.configured?      # => true
+#   SmsConfig.sender_name      # => "LabTrack"
+#
+# Environment variable mapping (no prefix — reads BREVO_API_KEY directly):
+#   BREVO_API_KEY       -> brevo_api_key
+#   SMS_SENDER_NAME     -> sender_name
+#   SMS_ENABLED         -> enabled
+#
+class SmsConfig < Anyway::Config
+  config_name :sms
+
+  # No prefix — env vars are read as-is (BREVO_API_KEY, SMS_SENDER_NAME, etc.)
+  env_prefix ""
+
+  # Brevo API key (shared across Brevo services)
+  attr_config brevo_api_key: nil
+
+  # Sender name displayed on the recipient's phone (max 11 alphanumeric chars)
+  attr_config sender_name: "LabTrack"
+
+  # Explicit enable flag — always on in production when configured,
+  # opt-in in development via SMS_ENABLED=true
+  attr_config enabled: false
+
+  # Check if SMS sending is fully configured
+  #
+  # @return [Boolean]
+  def configured?
+    brevo_api_key.present? && sender_name.present?
+  end
+
+  # Check if SMS sending is active in the current environment
+  #
+  # Production: enabled when configured
+  # Development: enabled when configured AND SMS_ENABLED=true
+  # Test: always disabled
+  #
+  # @return [Boolean]
+  def active?
+    return false if Rails.env.test?
+    return configured? if Rails.env.production?
+
+    # Development / other: explicit opt-in
+    enabled_flag? && configured?
+  end
+
+  private
+
+  # Parse the enabled flag (handles string "true"/"false" from env vars)
+  #
+  # @return [Boolean]
+  def enabled_flag?
+    ActiveModel::Type::Boolean.new.cast(enabled)
+  end
+end

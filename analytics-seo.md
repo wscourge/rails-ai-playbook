@@ -41,10 +41,12 @@ Ask the user:
 
 ```bash
 # .env
-GA_MEASUREMENT_ID=G-XXXXXXXXXX
+ANALYTICS_GA_MEASUREMENT_ID=G-XXXXXXXXXX
 ```
 
 ### Add to Layout
+
+Option 1: ERB injection (simple)
 
 ```erb
 <!-- app/views/layouts/application.html.erb -->
@@ -52,16 +54,49 @@ GA_MEASUREMENT_ID=G-XXXXXXXXXX
   <!-- ... other head content ... -->
 
   <%# Google Analytics 4 %>
-  <% if ENV['GA_MEASUREMENT_ID'].present? %>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=<%= ENV['GA_MEASUREMENT_ID'] %>"></script>
+  <% if AnalyticsConfig.ga_measurement_id.present? %>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=<%= AnalyticsConfig.ga_measurement_id %>"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', '<%= ENV['GA_MEASUREMENT_ID'] %>');
+      gtag('config', '<%= AnalyticsConfig.ga_measurement_id %>');
     </script>
   <% end %>
 </head>
+```
+
+Option 2: Frontend config object (cleaner separation)
+
+```erb
+<!-- app/views/layouts/application.html.erb -->
+<script>
+  window.__CONFIG__ = <%= raw({
+    ga_measurement_id: AnalyticsConfig.ga_measurement_id,
+    ahrefs_verification: AnalyticsConfig.ahrefs_verification,
+    sentry_dsn: SentryConfig.dsn,
+    env: Rails.env,
+  }.compact.to_json) %>;
+</script>
+```
+
+Then initialize GA from your JavaScript entrypoint:
+
+```js
+// app/frontend/lib/analytics.js
+const config = window.__CONFIG__ || {};
+
+if (config.ga_measurement_id) {
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${config.ga_measurement_id}`;
+  document.head.appendChild(script);
+
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', config.ga_measurement_id);
+}
 ```
 
 ---
@@ -106,7 +141,7 @@ After verification:
 
 ```bash
 # .env
-AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
+ANALYTICS_AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
 ```
 
 ### Add to Layout
@@ -115,8 +150,8 @@ AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
 <!-- app/views/layouts/application.html.erb -->
 <head>
   <%# Ahrefs Verification %>
-  <% if ENV['AHREFS_VERIFICATION'].present? %>
-    <meta name="ahrefs-site-verification" content="<%= ENV['AHREFS_VERIFICATION'] %>">
+  <% if AnalyticsConfig.ahrefs_verification.present? %>
+    <meta name="ahrefs-site-verification" content="<%= AnalyticsConfig.ahrefs_verification %>">
   <% end %>
 </head>
 ```
@@ -284,8 +319,8 @@ Add to layout for rich search results:
 
 ```bash
 # .env
-GA_MEASUREMENT_ID=G-XXXXXXXXXX
-AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
+ANALYTICS_GA_MEASUREMENT_ID=G-XXXXXXXXXX
+ANALYTICS_AHREFS_VERIFICATION=ahrefs-site-verification_xxxxxxxxxxxx
 
 # For sitemap generation in production
 RAILS_HOST=yourdomain.com

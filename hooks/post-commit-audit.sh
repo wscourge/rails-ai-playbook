@@ -51,17 +51,7 @@ check() {
 
 # ─── Linters (universal) ────────────────────────────────
 
-if [ -n "$ALL_TS" ]; then
-  ESLINT_OUT=$(echo "$ALL_TS" | xargs bunx eslint --no-warn-ignored 2>&1 || true)
-  if echo "$ESLINT_OUT" | grep -q "error"; then
-    check "ESLint" "FAIL" "$ESLINT_OUT"
-  else
-    check "ESLint" "PASS"
-  fi
-else
-  check "ESLint (no .ts/.tsx files)" "PASS"
-fi
-
+# Prettier + ESLint (prettier first, then ESLint — same order as bun lint:js)
 FORMAT_FILES=""
 if [ -n "$ALL_TS" ]; then FORMAT_FILES="$ALL_TS"; fi
 if [ -n "$CSS_FILES" ]; then FORMAT_FILES=$(echo -e "${FORMAT_FILES}\n${CSS_FILES}" | sed '/^$/d'); fi
@@ -76,6 +66,17 @@ if [ -n "$FORMAT_FILES" ]; then
   fi
 else
   check "Prettier (no formattable files)" "PASS"
+fi
+
+if [ -n "$ALL_TS" ]; then
+  ESLINT_OUT=$(echo "$ALL_TS" | xargs bunx eslint --no-warn-ignored 2>&1 || true)
+  if echo "$ESLINT_OUT" | grep -q "error"; then
+    check "ESLint" "FAIL" "$ESLINT_OUT"
+  else
+    check "ESLint" "PASS"
+  fi
+else
+  check "ESLint (no .ts/.tsx files)" "PASS"
 fi
 
 if [ -n "$CSS_FILES" ]; then

@@ -1,0 +1,84 @@
+# frozen_string_literal: true
+
+# Load all Anyway Config classes
+# See app/configs/ for individual configuration definitions
+#
+# Usage in code:
+#   ApplicationConfig.name       # => "LabTrack"
+#   StripeConfig.public_key      # => "pk_test_..."
+#   OAuthConfig.enabled_providers # => [{ key: "google_oauth2", name: "Google" }]
+#
+# Environment variable mapping (via Anyway Config):
+#   APP_NAME         -> ApplicationConfig.name
+#   STRIPE_PUBLIC_KEY -> StripeConfig.public_key
+#   GOOGLE_CLIENT_ID -> OAuthConfig.google_client_id
+#   etc.
+
+# Eager load all config classes
+Rails.root.glob("app/configs/**/*.rb").each { |f| require f }
+
+# Create singleton instances for easy access
+Rails.application.config.x.app = ApplicationConfig.new
+Rails.application.config.x.stripe = StripeConfig.new
+Rails.application.config.x.oauth = OAuthConfig.new
+Rails.application.config.x.sentry = SentryConfig.new
+Rails.application.config.x.openai = OpenAIConfig.new
+Rails.application.config.x.email = EmailConfig.new
+Rails.application.config.x.sms = SmsConfig.new
+Rails.application.config.x.analytics = AnalyticsConfig.new
+
+# Convenience module for accessing configs
+module Config
+  class << self
+    def app
+      Rails.application.config.x.app
+    end
+
+    def stripe
+      Rails.application.config.x.stripe
+    end
+
+    def oauth
+      Rails.application.config.x.oauth
+    end
+
+    def sentry
+      Rails.application.config.x.sentry
+    end
+
+    def openai
+      Rails.application.config.x.openai
+    end
+
+    def email
+      Rails.application.config.x.email
+    end
+
+    def sms
+      Rails.application.config.x.sms
+    end
+
+    def analytics
+      Rails.application.config.x.analytics
+    end
+
+    # Generate frontend configuration (safe to expose to browser)
+    def frontend
+      {
+        app: {
+          name: app.name,
+          version: app.version,
+          environment: Rails.env,
+        },
+        sentry: sentry.frontend_config,
+        analytics: analytics.frontend_config,
+        oauth: {
+          providers: oauth.enabled_providers,
+        },
+        stripe: {
+          public_key: stripe.public_key,
+        },
+      }
+    end
+  end
+end

@@ -36,24 +36,28 @@ end
 
 View emails at: http://localhost:3000/letter_opener
 
-### Production (Resend)
+### Production (Brevo SMTP)
 
 ```ruby
-# Gemfile
-gem "resend"
-
 # config/environments/production.rb
-config.action_mailer.delivery_method = :resend
-config.action_mailer.default_url_options = { host: ENV["RAILS_HOST"] }
-
-# config/initializers/resend.rb
-Resend.api_key = ENV["RESEND_API_KEY"]
+config.action_mailer.delivery_method = :smtp
+config.action_mailer.default_url_options = { host: ENV["APP_HOST"] }
+config.action_mailer.smtp_settings = {
+  address: "smtp-relay.brevo.com",
+  port: 587,
+  user_name: BrevoConfig.smtp_username,
+  password: BrevoConfig.smtp_password,
+  authentication: :plain,
+  enable_starttls_auto: true
+}
 ```
 
 ```bash
 # .env
-RESEND_API_KEY=re_xxxxxxxxxxxxx
-RAILS_HOST=yourdomain.com
+BREVO_SMTP_USERNAME=your-smtp-login@smtp-brevo.com
+BREVO_SMTP_PASSWORD=xsmtpsib-XXXXXXXX
+BREVO_FROM_ADDRESS=noreply@yourdomain.com
+APP_HOST=yourdomain.com
 ```
 
 ---
@@ -192,7 +196,7 @@ end
 ### React Pages
 
 ```jsx
-// app/frontend/pages/Auth/ForgotPassword.jsx
+// app/frontend/pages/auth/forgot-password.jsx
 import { Head, useForm, usePage } from "@inertiajs/react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
@@ -241,7 +245,7 @@ export default function ForgotPassword() {
 ```
 
 ```jsx
-// app/frontend/pages/Auth/ResetPassword.jsx
+// app/frontend/pages/auth/reset-password.jsx
 import { Head, useForm, usePage } from "@inertiajs/react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
@@ -421,6 +425,208 @@ en:
       subject: Reset your password
     email_verification:
       subject: Verify your email
+    email_change:
+      confirm_old: Confirm email change request
+      confirm_new: Verify your new email address
+      completed: Your email has been changed
+```
+
+---
+
+## Email Change with Dual Confirmation (Optional)
+
+For high-security apps, require both old and new email addresses to confirm before an email change takes effect. This prevents account takeover if someone gains access to one email.
+
+### Migration
+
+```ruby
+# db/migrate/xxx_create_email_change_requests.rb
+class CreateEmailChangeRequests < ActiveRecord::Migration[x.x]
+  def change
+    create_table :email_change_requests do |t|
+      t.references :user, null: false, foreign_key: true
+      t.string :new_email, null: false
+      t.string :old_email_token, null: false
+      t.string :new_email_token, null: false
+      t.datetime :old_email_confirmed_at
+      t.datetime :new_email_confirmed_at
+      t.datetime :completed_at
+      t.timestamps
+    end
+
+    add_index :email_change_requests, :old_email_token, unique: true
+    add_index :email_change_requests, :new_email_token, unique: true
+  end
+end
+```
+
+### Model
+
+```ruby
+# app/models/email_change_request.rb
+class EmailChangeRequest < ApplicationRecord
+  belongs_to :user
+
+  validates :new_email, presence: true, format: URI::MailTo::EMAIL_REGEXP
+
+  before_create :generate_tokens
+
+  def old_email_confirmed?
+    old_email_confirmed_at.present?
+  end
+
+  def new_email_confirmed?
+    new_email_confirmed_at.present?
+  end
+
+  def both_confirmed?
+    old_email_confirmed? && new_email_confirmed?
+  end
+
+  def pending?
+    completed_at.nil?
+  end
+
+  def complete!
+    return unless both_confirmed? && pending?
+
+    transaction do
+      user.update!(email_address: new_email)
+      update!(completed_at: Time.current)
+    end
+
+    EmailChangeMailer.completed(user, new_email).deliver_later
+  end
+
+  private
+
+  def generate_tokens
+    self.old_email_token = SecureRandom.urlsafe_base64(32)
+    self.new_email_token = SecureRandom.urlsafe_base64(32)
+  end
+end
+```
+
+### User Association
+
+```ruby
+# app/models/user.rb
+has_many :email_change_requests, dependent: :destroy
+
+def pending_email_change
+  email_change_requests.where(completed_at: nil).last
+end
+```
+
+### Request Email Change Interactor
+
+```ruby
+# app/interactors/contact/request_email_change.rb
+class Contact::RequestEmailChange
+  include Interactor
+
+  delegate :user, :new_email, :password, to: :context
+
+  def call
+    validate_password
+    validate_new_email
+    cancel_pending_request
+    create_request
+    send_confirmation_emails
+  end
+
+  private
+
+  def validate_password
+    return unless user.password_user?
+    return if user.authenticate(password)
+    context.fail!(error: I18n.t("errors.invalid_password"))
+  end
+
+  def validate_new_email
+    if User.exists?(email_address: new_email.downcase)
+      context.fail!(error: I18n.t("errors.email_taken"))
+    end
+  end
+
+  def cancel_pending_request
+    user.pending_email_change&.destroy
+  end
+
+  def create_request
+    context.request = user.email_change_requests.create!(new_email: new_email)
+  end
+
+  def send_confirmation_emails
+    req = context.request
+    EmailChangeMailer.confirm_old(user, req).deliver_later
+    EmailChangeMailer.confirm_new(user, req).deliver_later
+  end
+end
+```
+
+### Confirmation Controller
+
+```ruby
+# app/controllers/email_change_confirmations_controller.rb
+class EmailChangeConfirmationsController < ApplicationController
+  allow_unauthenticated_access
+
+  def confirm_old
+    request = EmailChangeRequest.find_by(old_email_token: params[:token])
+    confirm_and_complete(request, :old_email_confirmed_at)
+  end
+
+  def confirm_new
+    request = EmailChangeRequest.find_by(new_email_token: params[:token])
+    confirm_and_complete(request, :new_email_confirmed_at)
+  end
+
+  private
+
+  def confirm_and_complete(request, timestamp_field)
+    if request&.pending?
+      request.update!(timestamp_field => Time.current)
+      request.complete! if request.both_confirmed?
+      redirect_to root_path, notice: I18n.t("settings.email_change.confirmed")
+    else
+      redirect_to root_path, alert: I18n.t("settings.email_change.invalid_token")
+    end
+  end
+end
+```
+
+### Routes
+
+```ruby
+# config/routes.rb
+get "email/confirm-old/:token", to: "email_change_confirmations#confirm_old", as: :confirm_old_email
+get "email/confirm-new/:token", to: "email_change_confirmations#confirm_new", as: :confirm_new_email
+```
+
+### Mailer
+
+```ruby
+# app/mailers/email_change_mailer.rb
+class EmailChangeMailer < ApplicationMailer
+  def confirm_old(user, request)
+    @user = user
+    @url = confirm_old_email_url(token: request.old_email_token)
+    mail(to: user.email_address, subject: I18n.t("mailers.email_change.confirm_old"))
+  end
+
+  def confirm_new(user, request)
+    @user = user
+    @url = confirm_new_email_url(token: request.new_email_token)
+    mail(to: request.new_email, subject: I18n.t("mailers.email_change.confirm_new"))
+  end
+
+  def completed(user, new_email)
+    @user = user
+    @new_email = new_email
+    mail(to: new_email, subject: I18n.t("mailers.email_change.completed"))
+  end
+end
 ```
 
 ---

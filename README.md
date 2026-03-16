@@ -11,7 +11,9 @@ This is the system I use to build Rails applications with Claude Code. It gives 
 ### Setup & Configuration
 | File | What It Does |
 |------|-------------|
-| [PLAYBOOK.md](PLAYBOOK.md) | Main playbook — Claude reads this when creating a new app |
+| [_PLAYBOOK_NEW_PROJECT.md](_PLAYBOOK_NEW_PROJECT.md) | Step-by-step guide for creating a new Rails app from scratch |
+| [_PLAYBOOK_EXISTING_PROJECT.md](_PLAYBOOK_EXISTING_PROJECT.md) | Main playbook — conventions for working on existing projects |
+| [UPGRADE_EXISTING_PROJECT.md](UPGRADE_EXISTING_PROJECT.md) | Bring an older project up to date with the latest playbook |
 | [project-structure.md](project-structure.md) | Templates for CLAUDE.md and all project docs + creation checklist |
 | [brand-interview.md](brand-interview.md) | Questions to ask before building — feeds into DESIGN.md |
 | [env-template.md](env-template.md) | Environment variable patterns |
@@ -41,6 +43,7 @@ This is the system I use to build Rails applications with Claude Code. It gives 
 | [legal-pages.md](legal-pages.md) | Privacy Policy + Terms of Service |
 | [analytics-seo.md](analytics-seo.md) | GA4, Search Console, meta tags, sitemap |
 | [logo-generation.md](logo-generation.md) | Logo + favicon generation via AI |
+| [brevo.md](brevo.md) | Brevo transactional email + SMS setup |
 
 ---
 
@@ -59,7 +62,9 @@ Then point your global `~/.claude/CLAUDE.md` at it:
 ```markdown
 ## Project Playbooks
 
-When creating a new **Rails app**, see: `~/.claude/rails-playbook/PLAYBOOK.md`
+When creating a new **Rails app**, see: `~/.claude/rails-playbook/_PLAYBOOK_NEW_PROJECT.md`
+
+When working on an existing **Rails app**, see: `~/.claude/rails-playbook/_PLAYBOOK_EXISTING_PROJECT.md`
 ```
 
 ### 2. Create a New App
@@ -96,7 +101,8 @@ This playbook is opinionated. It assumes:
 | **Payments** | Stripe via Pay gem |
 | **Jobs** | Solid Queue (single DB) |
 | **Cache** | Solid Cache (single DB) |
-| **Email** | Resend (prod) / letter_opener_web (dev) |
+| **Email** | Brevo SMTP (prod) / letter_opener_web (dev) |
+| **SMS** | Brevo Transactional SMS (prod) / Rails logger (dev) |
 | **Testing (Ruby)** | RSpec + FactoryBot + FFaker + Shoulda Matchers |
 | **Testing (JS)** | Jest (logic only) |
 | **CSS Linting** | Stylelint |

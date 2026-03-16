@@ -1,0 +1,3 @@
+/Users/me/ws/tzif.io/health/app/models/concerns/logs.rb
+/Users/me/ws/tzif.io/health/app/configs/sentry_config.rb
+/Users/me/ws/tzif.io/health/app/controllers/application_controller.rb

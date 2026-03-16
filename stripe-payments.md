@@ -284,6 +284,81 @@ end
 
 ## Billing Controller
 
+Use interactors to encapsulate checkout and portal logic:
+
+```ruby
+# app/interactors/billing/create_checkout.rb
+class Billing::CreateCheckout
+  include Interactor
+
+  delegate :user, :price_id, :success_url, :cancel_url, to: :context
+
+  def call
+    plan = PlansService.find_plan(price_id)
+    context.fail!(error: I18n.t("billing.invalid_plan")) unless plan
+
+    checkout = user.payment_processor.checkout(
+      line_items: [{ price: price_id, quantity: 1 }],
+      mode: plan[:mode] || "subscription",
+      success_url: success_url,
+      cancel_url: cancel_url
+    )
+
+    context.checkout_url = checkout.url
+  end
+end
+```
+
+```ruby
+# app/interactors/billing/create_portal.rb
+class Billing::CreatePortal
+  include Interactor
+
+  delegate :user, :return_url, to: :context
+
+  def call
+    portal = user.payment_processor.billing_portal(return_url: return_url)
+    context.portal_url = portal.url
+  end
+end
+```
+
+```ruby
+# app/interactors/billing/get_invoices.rb
+class Billing::GetInvoices
+  include Interactor
+
+  delegate :user, to: :context
+
+  def call
+    customer = user.payment_processor
+    context.fail!(error: "No payment processor") unless customer&.processor_id
+
+    # Past invoices (paid ones)
+    past = Stripe::Invoice.list(customer: customer.processor_id, status: "paid", limit: 10)
+    context.past_invoices = past.data.map do |inv|
+      {
+        id: inv.id,
+        date: Time.at(inv.created).to_date,
+        amount: inv.total / 100.0,
+        url: inv.invoice_pdf
+      }
+    end
+
+    # Upcoming invoice (if subscription active)
+    begin
+      upcoming = Stripe::Invoice.upcoming(customer: customer.processor_id)
+      context.upcoming_invoice = {
+        date: Time.at(upcoming.next_payment_attempt).to_date,
+        amount: upcoming.total / 100.0
+      }
+    rescue Stripe::InvalidRequestError
+      context.upcoming_invoice = nil
+    end
+  end
+end
+```
+
 ```ruby
 # app/controllers/billing_controller.rb
 
@@ -297,29 +372,26 @@ class BillingController < ApplicationController
   end
 
   def subscribe
-    price_id = params[:price_id]
-    plan = PlansService.find_plan(price_id)
-
-    return redirect_to pricing_path, alert: I18n.t("billing.invalid_plan") unless plan
-
-    checkout_params = {
-      line_items: [{ price: price_id, quantity: 1 }],
+    result = Billing::CreateCheckout.call(
+      user: Current.user,
+      price_id: params[:price_id],
       success_url: root_url,
       cancel_url: pricing_url
-    }
+    )
 
-    # Determine checkout mode from plan config
-    checkout_params[:mode] = plan[:mode] || "subscription"
-
-    checkout = Current.user.payment_processor.checkout(**checkout_params)
-    redirect_to checkout.url, allow_other_host: true
+    if result.success?
+      redirect_to result.checkout_url, allow_other_host: true
+    else
+      redirect_to pricing_path, alert: result.error
+    end
   end
 
   def portal
-    portal_session = Current.user.payment_processor.billing_portal(
+    result = Billing::CreatePortal.call(
+      user: Current.user,
       return_url: settings_url
     )
-    redirect_to portal_session.url, allow_other_host: true
+    redirect_to result.portal_url, allow_other_host: true
   end
 end
 ```
@@ -351,7 +423,7 @@ class WebhooksController < ApplicationController
     event = Stripe::Webhook.construct_event(
       payload,
       sig_header,
-      ENV['STRIPE_WEBHOOK_SECRET']
+      StripeConfig.webhook_secret
     )
 
     Pay::Webhooks::Stripe.new.call(event)
@@ -361,6 +433,8 @@ class WebhooksController < ApplicationController
   end
 end
 ```
+
+See [anyway-config.md](anyway-config.md) for the `StripeConfig` class definition.
 
 ### Pay Initializer with Custom Handlers
 
@@ -376,12 +450,12 @@ end
 ActiveSupport.on_load(:pay) do
   Pay::Webhooks.delegator.subscribe "stripe.customer.subscription.created" do |event|
     # Handle subscription created
-    Rails.logger.info "Subscription created: #{event.data.object.id}"
+    Logs.info("Payments", "Subscription created: #{event.data.object.id}")
   end
 
   Pay::Webhooks.delegator.subscribe "stripe.customer.subscription.deleted" do |event|
     # Handle subscription cancelled
-    Rails.logger.info "Subscription deleted: #{event.data.object.id}"
+    Logs.info("Payments", "Subscription deleted: #{event.data.object.id}")
   end
 end
 ```
@@ -410,6 +484,8 @@ class User < ApplicationRecord
   pay_customer default_payment_processor: :stripe
 
   def plan_name
+    return "Pro (comped)" if comped?
+
     # Check active subscription first
     sub = pay_subscriptions.active.last
     return PlansService.plan_name(sub.processor_plan) if sub
@@ -432,7 +508,7 @@ class User < ApplicationRecord
   end
 
   def free_plan?
-    !subscription_active? && !lifetime_access?
+    !comped? && !subscription_active? && !lifetime_access?
   end
 
   def paid_plan?
@@ -605,6 +681,89 @@ STRIPE_WEBHOOK_SECRET=whsec_XXX
 STRIPE_PRICE_PRO=price_XXX      # Production only
 STRIPE_PRICE_MAX=price_XXX      # Production only
 STRIPE_PRICE_LIFETIME=price_XXX # Production only (one-time, if used)
+```
+
+---
+
+## Comped (Gifted) Access
+
+Staff can mark individual users as "comped" — they get full paid access without going through Stripe. Useful for beta testers, friends, partners, or support cases.
+
+### Migration
+
+```ruby
+# db/migrate/YYYYMMDDHHMMSS_add_comped_to_users.rb
+
+class AddCompedToUsers < ActiveRecord::Migration[x.x]
+  def change
+    add_column :users, :comped, :boolean, default: false, null: false
+  end
+end
+```
+
+### How It Works
+
+- `user.comped?` returns `true` → all paid feature gates are bypassed
+- `user.paid_plan?` returns `true` for comped users (see User Helpers above)
+- `user.plan_name` returns `"Pro (comped)"` for comped users
+- No Stripe customer, subscription, or charge is created — it's purely a local flag
+- Staff can toggle it on/off from the staff panel (see [staff-admin.md](staff-admin.md#comped-access))
+
+### Rake Task
+
+```ruby
+# lib/tasks/comp.rake
+
+namespace :comp do
+  desc "Grant comped access to a user. Usage: rake comp:add[user@example.com]"
+  task :add, [:email] => :environment do |_t, args|
+    email = args[:email]
+    abort "Usage: rake comp:add[email@example.com]" if email.blank?
+
+    user = User.find_by(email_address: email)
+    abort "User not found: #{email}" unless user
+
+    if user.comped?
+      puts "#{email} is already comped"
+    else
+      user.update!(comped: true)
+      puts "Granted comped access to #{email}"
+    end
+  end
+
+  desc "Revoke comped access from a user. Usage: rake comp:remove[user@example.com]"
+  task :remove, [:email] => :environment do |_t, args|
+    email = args[:email]
+    abort "Usage: rake comp:remove[email@example.com]" if email.blank?
+
+    user = User.find_by(email_address: email)
+    abort "User not found: #{email}" unless user
+
+    if user.comped?
+      user.update!(comped: false)
+      puts "Revoked comped access from #{email}"
+    else
+      puts "#{email} is not comped"
+    end
+  end
+
+  desc "List all comped users"
+  task list: :environment do
+    users = User.where(comped: true).order(:created_at)
+
+    if users.empty?
+      puts "No comped users"
+    else
+      puts "Comped users:"
+      puts "-" * 50
+      users.each do |u|
+        puts "  #{u.email_address} — since #{u.updated_at.strftime('%Y-%m-%d')}"
+      end
+      puts "-" * 50
+      puts "Total: #{users.count}"
+    end
+  end
+end
 ```
 
 ---

@@ -181,7 +181,11 @@ env:
     - QUEUE_DATABASE_URL
     - CACHE_DATABASE_URL
     - CABLE_DATABASE_URL
-    - RESEND_API_KEY
+    - BREVO_SMTP_USERNAME
+    - BREVO_SMTP_PASSWORD
+    - BREVO_API_KEY
+    - BREVO_SMS_SENDER
+    - BREVO_FROM_ADDRESS
     - STRIPE_PUBLIC_KEY
     - STRIPE_SECRET_KEY
     - STRIPE_WEBHOOK_SECRET
@@ -219,12 +223,16 @@ DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_
 QUEUE_DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_queue_production
 CACHE_DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_cache_production
 CABLE_DATABASE_URL=postgres://myapp:STRONG_PASSWORD_HERE@<db-1-private-ip>:5432/myapp_cable_production
-RESEND_API_KEY=re_XXX
+BREVO_SMTP_USERNAME=your-smtp-login@smtp-brevo.com
+BREVO_SMTP_PASSWORD=xsmtpsib-XXXXXXXX
+BREVO_API_KEY=xkeysib-XXXXXXXX
+BREVO_SMS_SENDER=MyApp
+BREVO_FROM_ADDRESS=noreply@yourdomain.com
 STRIPE_PUBLIC_KEY=pk_live_XXX
 STRIPE_SECRET_KEY=sk_live_XXX
 STRIPE_WEBHOOK_SECRET=whsec_XXX
-GOOGLE_CLIENT_ID=XXX.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-XXX
+GOOGLE_OAUTH_CLIENT_ID=XXX.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-XXX
 SENTRY_DSN=https://xxx@xxx.ingest.sentry.io/xxx
 TELEGRAM_API_KEY=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 ```
@@ -237,15 +245,22 @@ TELEGRAM_API_KEY=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 
 ### Dockerfile
 
-Kamal deploys Docker images. Rails generates a production-ready Dockerfile. Verify it includes:
+Kamal deploys Docker images. Rails generates a production-ready Dockerfile. Verify these patterns are present:
 
 ```dockerfile
-# Dockerfile (Rails default — verify these are present)
+# Dockerfile (Rails default with optimizations)
 FROM docker.io/library/ruby:<latest-stable>-slim AS base
 
-# ... (standard Rails Dockerfile)
+# Install jemalloc for memory optimization
+RUN apt-get update && apt-get install -y libjemalloc2 && rm -rf /var/lib/apt/lists/*
+ENV LD_PRELOAD=libjemalloc.so.2
 
-# Make sure bun is installed for JS deps
+# ... (rest of base stage)
+
+# Build stage
+FROM base AS build
+
+# Install bun for JS deps
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 
@@ -253,9 +268,25 @@ ENV PATH="/root/.bun/bin:$PATH"
 COPY package.json bun.lockb ./
 RUN bun install --frozen-lockfile
 
-# Precompile assets
+# Precompile assets (no master key needed at build)
 RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+
+# Final stage
+FROM base
+
+# Create non-root user
+RUN groupadd --system --gid 1000 rails && \
+    useradd --system --uid 1000 --gid rails --create-home rails
+
+USER rails:rails
+
+# Copy built artifacts...
 ```
+
+**Key optimizations:**
+- **jemalloc** — Reduces memory fragmentation, especially important for long-running Rails processes
+- **Non-root user** — Security best practice; the app runs as `rails:rails` (UID 1000)
+- **SECRET_KEY_BASE_DUMMY** — Allows asset precompilation without the real master key
 
 ### Procfile.dev
 
@@ -271,13 +302,15 @@ css: bun run build:css --watch
 #!/bin/bash
 set -e
 
-# Run migrations on deploy
-if [ "${RAILS_ENV}" = "production" ]; then
-  ./bin/rails db:migrate
+# Run migrations on deploy (use db:prepare for schema + migrations)
+if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
+  ./bin/rails db:prepare
 fi
 
 exec "${@}"
 ```
+
+> Use `db:prepare` instead of `db:migrate` — it runs migrations on existing databases and creates + loads schema on empty ones. This handles initial deploys and subsequent deploys with a single command.
 
 ### config/puma.rb
 
@@ -418,7 +451,11 @@ gh secret set DATABASE_URL
 gh secret set QUEUE_DATABASE_URL
 gh secret set CACHE_DATABASE_URL
 gh secret set CABLE_DATABASE_URL
-gh secret set RESEND_API_KEY
+gh secret set BREVO_SMTP_USERNAME
+gh secret set BREVO_SMTP_PASSWORD
+gh secret set BREVO_API_KEY
+gh secret set BREVO_SMS_SENDER
+gh secret set BREVO_FROM_ADDRESS
 gh secret set STRIPE_PUBLIC_KEY
 gh secret set STRIPE_SECRET_KEY
 gh secret set STRIPE_WEBHOOK_SECRET
@@ -517,12 +554,16 @@ jobs:
       QUEUE_DATABASE_URL: ${{ secrets.QUEUE_DATABASE_URL }}
       CACHE_DATABASE_URL: ${{ secrets.CACHE_DATABASE_URL }}
       CABLE_DATABASE_URL: ${{ secrets.CABLE_DATABASE_URL }}
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      BREVO_SMTP_USERNAME: ${{ secrets.BREVO_SMTP_USERNAME }}
+      BREVO_SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_PASSWORD }}
+      BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+      BREVO_SMS_SENDER: ${{ secrets.BREVO_SMS_SENDER }}
+      BREVO_FROM_ADDRESS: ${{ secrets.BREVO_FROM_ADDRESS }}
       STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY }}
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
 

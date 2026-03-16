@@ -1,0 +1,88 @@
+# frozen_string_literal: true
+
+# Email delivery configuration
+# Loaded from environment variables and config/email.yml
+#
+# @example
+#   EmailConfig.configured?     # => true
+#   EmailConfig.from_address    # => "noreply@labtrack.app"
+#
+class EmailConfig < Anyway::Config
+  config_name :email
+
+  # Brevo SMTP settings (env vars: BREVO_SMTP_KEY)
+  env_prefix ""
+
+  # Brevo SMTP
+  attr_config brevo_smtp_key: nil,
+              brevo_smtp_login: nil
+
+  # Email addresses
+  attr_config from_address: nil,
+              support_address: nil,
+              reply_to_address: nil
+
+  # Check if email is configured for production
+  def configured?
+    brevo_smtp_key.present?
+  end
+
+  # Get the from address with app name
+  #
+  # @return [String] Formatted from address
+  def from_with_name
+    name = ApplicationConfig.new.name
+    address = from_address || default_from_address
+    "#{name} <#{address}>"
+  end
+
+  # Get default from address based on host
+  #
+  # @return [String] Default from address
+  def default_from_address
+    host = ApplicationConfig.new.host
+    domain = host.split(":").first
+    domain = "labtrack.app" if domain == "localhost"
+    "noreply@#{domain}"
+  end
+
+  # Get support address
+  #
+  # @return [String] Support email address
+  def support
+    support_address || default_support_address
+  end
+
+  # Get default support address
+  #
+  # @return [String] Default support address
+  def default_support_address
+    host = ApplicationConfig.new.host
+    domain = host.split(":").first
+    domain = "labtrack.app" if domain == "localhost"
+    "support@#{domain}"
+  end
+
+  # Configure Action Mailer for Brevo
+  #
+  # @param config [Rails::Application::Configuration] Rails config
+  def configure_action_mailer!(config)
+    if Rails.env.production? && configured?
+      config.action_mailer.delivery_method = :smtp
+      config.action_mailer.smtp_settings = {
+        address: "smtp-relay.brevo.com",
+        port: 587,
+        user_name: brevo_smtp_login,
+        password: brevo_smtp_key,
+        authentication: :plain,
+        enable_starttls_auto: true,
+      }
+    elsif Rails.env.development?
+      config.action_mailer.delivery_method = :letter_opener_web
+    else
+      config.action_mailer.delivery_method = :test
+    end
+
+    config.action_mailer.default_options = { from: from_with_name }
+  end
+end

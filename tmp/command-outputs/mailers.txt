@@ -1,0 +1,79 @@
+# frozen_string_literal: true
+
+class ApplicationMailer < ActionMailer::Base
+  default from: "from@example.com"
+  layout "mailer"
+end
+# frozen_string_literal: true
+
+class EmailChangeMailer < ApplicationMailer
+  # Send to current (old) email address for confirmation
+  def confirm_old_email(request)
+    @request = request
+    @user = request.user
+    @token = request.old_email_token
+
+    mail(
+      subject: I18n.t("mailers.email_change.confirm_old_email.subject"),
+      to: @user.email_address,
+    )
+  end
+
+  # Send to new email address for confirmation
+  def confirm_new_email(request)
+    @request = request
+    @user = request.user
+    @token = request.new_email_token
+
+    mail(
+      subject: I18n.t("mailers.email_change.confirm_new_email.subject"),
+      to: request.new_email,
+    )
+  end
+
+  # Send notification to old email after change is complete
+  def email_changed_notification(user, old_email)
+    @user = user
+    @old_email = old_email
+
+    mail(
+      subject: I18n.t("mailers.email_change.changed_notification.subject"),
+      to: old_email,
+    )
+  end
+end
+# frozen_string_literal: true
+
+class EmailVerificationMailer < ApplicationMailer
+  def verify(user)
+    @user = user
+    @token = user.generate_token_for(:email_verification)
+    mail subject: I18n.t("mailers.email_verification.subject"), to: user.email_address
+  end
+end
+# frozen_string_literal: true
+
+class NotificationMailer < ApplicationMailer
+  # Generic notification email — receives a pre-rendered notification record.
+  #
+  # @param notification [Notification] with channel "email", title = subject, body = HTML body
+  def notify(notification)
+    @notification = notification
+    @user = notification.user
+    @body = notification.body
+    @act_on_url = notification.act_on_url
+
+    mail(
+      subject: notification.title,
+      to: @user.email_address,
+    )
+  end
+end
+# frozen_string_literal: true
+
+class PasswordsMailer < ApplicationMailer
+  def reset(user)
+    @user = user
+    mail subject: "Reset your password", to: user.email_address
+  end
+end

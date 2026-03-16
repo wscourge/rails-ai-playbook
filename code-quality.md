@@ -140,9 +140,136 @@ end
 ## Models
 
 - **No `validates` on models. Period.** All validation lives in interactors, right next to the write operation. Models define associations, scopes, normalizations, and helper methods — never validation rules. The database enforces data integrity (NOT NULL, unique indexes, CHECK constraints, foreign keys). Interactors enforce business rules. Models do neither.
+- **Slugs, not IDs in URLs.** Every user-facing model must include the `Sluggable` concern and use its `slug` column for URL lookups. Numeric IDs are internal — never expose them in routes or links. See the [Slugs](#slugs) section below.
+- **Integer-backed enums only.** Every enum column is an `integer` in the database, never a `string`. Use Rails `enum` with explicit value mapping. See the [Enums](#enums) section below.
 - **Scopes for reusable queries.** If a `where` clause appears in more than one place, make it a scope. Named scopes make code readable.
 - **Minimize callbacks.** Normalizing data in `before_save` is fine. Triggering jobs, sending emails, or modifying other records in `after_create` is not — that belongs in an interactor where it's explicit and testable.
 - **Associations tell the domain story.** Read the model file and you should understand the relationships. Use descriptive foreign key names over generic ones.
+
+### Slugs
+
+**Every model that appears in a URL** must have a `slug` column and use the `Sluggable` concern. URLs show slugs, never numeric IDs.
+
+```
+/users/j4k9m2x        ← good (slug)
+/users/42              ← bad  (numeric ID)
+/announcements/x7p3q1  ← good
+```
+
+#### Migration
+
+Add a `slug` column to any model that needs URL exposure:
+
+```ruby
+add_column :users, :slug, :string, null: false
+add_index  :users, :slug, unique: true
+```
+
+#### Concern
+
+```ruby
+# app/models/concerns/sluggable.rb
+module Sluggable
+  extend ActiveSupport::Concern
+
+  SLUG_LENGTH = 8
+  SLUG_ALPHABET = ("a".."z").to_a + ("0".."9").to_a
+
+  included do
+    before_create :generate_slug, unless: :slug?
+
+    scope :find_by_slug!, ->(slug) { find_by!(slug: slug) }
+  end
+
+  # Rails uses this for route generation:
+  #   user_path(user) → "/users/j4k9m2x"
+  def to_param
+    slug
+  end
+
+  private
+
+  def generate_slug
+    loop do
+      self.slug = Array.new(SLUG_LENGTH) { SLUG_ALPHABET.sample }.join
+      break unless self.class.exists?(slug: slug)
+    end
+  end
+end
+```
+
+#### Model usage
+
+```ruby
+class User < ApplicationRecord
+  include Sluggable
+  # ...
+end
+
+class Announcement < ApplicationRecord
+  include Sluggable
+  # ...
+end
+```
+
+#### Controller lookups
+
+**Always** use `find_by_slug!` instead of `find`:
+
+```ruby
+# Good
+user = User.find_by_slug!(params[:slug])
+
+# Bad — exposes numeric ID
+user = User.find(params[:id])
+```
+
+#### Routes
+
+Use `param: :slug` on every resource that uses slugs:
+
+```ruby
+resources :users, param: :slug, only: [:show]
+resources :announcements, param: :slug
+```
+
+This makes Rails generate `params[:slug]` instead of `params[:id]`.
+
+### Enums {#enums}
+
+**Every enum is backed by an integer column.** String columns waste space, are slower to index, and invite typos. Rails `enum` maps symbolic names to integers automatically.
+
+#### Migration
+
+```ruby
+# Always use :integer (the default for add_column :integer)
+add_column :contact_requests, :status, :integer, null: false, default: 0
+add_column :staffs, :role, :integer, null: false, default: 0
+```
+
+#### Model
+
+```ruby
+class ContactRequest < ApplicationRecord
+  enum :status, { new_request: 0, in_progress: 1, resolved: 2, archived: 3 }
+end
+```
+
+**Rules:**
+
+- **Explicit integer mapping.** Always use the `{ name: N }` hash form. Never use an array — inserting a value in the middle silently shifts all subsequent mappings and corrupts existing data.
+- **Never reorder or remove values.** Once a mapping is deployed, it's permanent. To deprecate a value, add a new one and migrate data — never delete or renumber.
+- **Start at 0.** Follow Ruby / C convention. Use `default: 0` in the migration for the most common initial state.
+- **Use `_prefix` or `_suffix` when names collide.** If two enums on the same model share a value name (e.g. `status: :active` and `tier: :active`), use `enum :status, { ... }, prefix: true` so the scope becomes `status_active` instead of `active`.
+- **No string columns for enums.** If you see `t.string :status` in a migration for a field with a known set of values, change it to `t.integer :status`.
+
+```ruby
+# Good — integer column, explicit mapping
+enum :role, { staff: 0, admin: 1, super_admin: 2 }
+
+# Bad — string column, no Rails enum
+ROLES = %w[staff admin super_admin].freeze
+```
 
 ---
 
@@ -157,8 +284,151 @@ end
   ```
   Only then move on to the next task.
 - **Database constraints are the last line of defense.** `NOT NULL`, unique indexes, CHECK constraints, and foreign keys catch bugs that validations miss. Code can have bugs. Constraints can't be bypassed. Use both.
-- **Migrations are append-only.** Never edit a migration that's been run. Need to change something? Write a new migration.
+- **Pre-release: edit migrations directly.** Before the first production deploy, keep migration history clean by editing existing migration files instead of creating new ones. Reset your database after changes:
+  ```bash
+  bin/rails db:drop db:create db:migrate db:seed
+  ```
+  This keeps the initial migration set readable and minimal. Only switch to append-only after production has real data.
+- **Post-release: migrations are append-only.** Once the app is in production, never edit a migration that's been run. Need to change something? Write a new migration. Production databases can't be reset.
 - **Back every association with a real foreign key.** This prevents orphaned records and makes the schema self-documenting.
+- **Annotate every model.** Use the `annotate` gem to keep schema comments at the top of every model, factory, spec, and route file. See the [Annotate](#annotate) section below.
+
+### Annotate (Schema Annotations) {#annotate}
+
+The `annotate` gem writes the current schema as a comment block at the top of model files, factories, specs, and routes. This makes it possible to see every column, index, and foreign key without opening a migration or `schema.rb`.
+
+#### Gemfile
+
+```ruby
+group :development do
+  gem "annotate"
+end
+```
+
+#### Generator
+
+Run once after installing:
+
+```bash
+bin/rails generate annotate:install
+```
+
+This creates `lib/tasks/auto_annotate_models.rake` which auto-runs annotations after every `db:migrate`. Edit the generated rake file to match these settings:
+
+```ruby
+# lib/tasks/auto_annotate_models.rake
+if Rails.env.development?
+  task :set_annotation_options do
+    Annotate.set_defaults(
+      "active_admin"                => "false",
+      "additional_file_patterns"    => [],
+      "routes"                      => "false",
+      "models"                      => "true",
+      "position_in_routes"          => "before",
+      "position_in_class"           => "before",
+      "position_in_test"            => "before",
+      "position_in_fixture"         => "before",
+      "position_in_factory"         => "before",
+      "position_in_serializer"      => "before",
+      "show_foreign_keys"           => "true",
+      "show_complete_foreign_keys"  => "true",
+      "show_indexes"                => "true",
+      "simple_indexes"              => "false",
+      "model_dir"                   => "app/models",
+      "root_dir"                    => "",
+      "include_version"             => "false",
+      "require"                     => "",
+      "exclude_tests"               => "false",
+      "exclude_fixtures"            => "true",
+      "exclude_factories"           => "false",
+      "exclude_serializers"         => "true",
+      "exclude_scaffolds"           => "true",
+      "exclude_controllers"         => "true",
+      "exclude_helpers"             => "true",
+      "exclude_sti_subclasses"      => "false",
+      "ignore_model_sub_dir"        => "false",
+      "ignore_columns"              => nil,
+      "ignore_routes"               => nil,
+      "ignore_unknown_models"       => "false",
+      "hide_limit_column_types"     => "integer,bigint,boolean",
+      "hide_default_column_types"   => "json,jsonb,hstore",
+      "classified_sort"             => "true",
+      "with_comment"                => "true",
+      "format_bare"                 => "true",
+      "format_rdoc"                 => "false",
+      "format_yard"                 => "false",
+      "format_markdown"             => "false",
+      "sort"                        => "false",
+      "force"                       => "false",
+      "frozen"                      => "false",
+      "trace"                       => "false",
+      "wrapper_open"                => nil,
+      "wrapper_close"               => nil
+    )
+  end
+
+  Annotate.load_tasks
+end
+```
+
+#### Key settings
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `position_in_class` | `before` | Schema at the top of the file — the first thing you see |
+| `show_foreign_keys` | `true` | See FK relationships at a glance |
+| `show_indexes` | `true` | Know which columns are indexed without checking migrations |
+| `exclude_factories` | `false` | Keep factories annotated for reference during test writing |
+| `with_comment` | `true` | Include column comments from the database |
+
+#### Running annotations
+
+Annotations run **automatically** after every `db:migrate` (via the rake task above). To manually re-annotate all files:
+
+```bash
+bin/rails annotate_models
+```
+
+To remove all annotations (rarely needed):
+
+```bash
+bin/rails remove_annotation
+```
+
+#### Process
+
+1. **After every migration** — annotations update automatically. Verify the diff looks correct before committing.
+2. **After pulling changes** — if a teammate ran a migration, run `bin/rails db:migrate` locally. Annotations update automatically.
+3. **Commit annotations with the migration** — the migration and the updated annotations belong in the same commit. Never commit a migration without the corresponding annotation changes.
+4. **Don't hand-edit annotations** — they're auto-generated. If they're wrong, fix the schema and re-run.
+
+#### Example output
+
+```ruby
+# == Schema Information
+#
+# Table name: users
+#
+#  id              :bigint           not null, primary key
+#  email_address   :string           not null
+#  password_digest :string           not null
+#  slug            :string           not null
+#  verified        :boolean          default(FALSE), not null
+#  comped          :boolean          default(FALSE), not null
+#  suspended_at    :datetime
+#  created_at      :datetime         not null
+#  updated_at      :datetime         not null
+#
+# Indexes
+#
+#  index_users_on_email_address  (email_address) UNIQUE
+#  index_users_on_slug           (slug) UNIQUE
+#
+class User < ApplicationRecord
+  include Sluggable
+  # ...
+end
+```
 
 ### Seeds
 
@@ -206,6 +476,438 @@ end
 - **Guard dev-only seeds.** Wrap test data in `return unless Rails.env.development?` — production seeds should only contain reference data (plans, roles, categories).
 - **No FFaker in seeds.** Seeds are deterministic reference data, not random test data. Use explicit values.
 - **Keep seeds fast.** Avoid N+1s — batch where possible. Seeds run on every `db:setup` and `db:reset`.
+
+> **Note:** For app-critical data that must exist in ALL environments (including test) and survive database cleaner, use **Reference Data** (below) instead of seeds.
+
+### Reference Data
+
+Reference data is app-critical configuration (plans, roles, permission levels, categories, etc.) that:
+
+1. **Must exist in every environment** — development, test, CI, staging, production
+2. **Loads automatically on app boot** — no manual `rake db:seed` required
+3. **Survives database cleaner** — tests can rely on it being present
+4. **Is defined in YAML files** — easy to read, diff, and sync with production
+5. **Is truly idempotent** — re-running updates existing records, never duplicates
+
+**This is different from seeds:**
+- Seeds (`db/seeds/`) require `bin/rails db:seed` and don't run in test
+- Reference data loads automatically via an initializer in all environments
+
+#### Directory Structure
+
+```
+db/
+├── reference_data/
+│   ├── plans.yml
+│   ├── roles.yml
+│   └── categories.yml
+└── seeds/
+    └── ...
+```
+
+#### YAML Format
+
+Each file defines records for one model. Use a stable `key` field as the lookup identifier:
+
+```yaml
+# db/reference_data/plans.yml
+#
+# Subscription plans. Synced from Stripe — update here after creating
+# products/prices via Stripe CLI, then deploy.
+
+- key: free
+  name: Free
+  stripe_price_id: null
+  amount_cents: 0
+  interval: null
+  features:
+    - "Up to 3 projects"
+    - "Community support"
+
+- key: pro
+  name: Pro
+  stripe_price_id: price_1ABC123
+  amount_cents: 2900
+  interval: month
+  features:
+    - "Unlimited projects"
+    - "Priority support"
+    - "API access"
+
+- key: lifetime
+  name: Lifetime
+  stripe_price_id: price_1XYZ789
+  amount_cents: 29900
+  interval: null  # one-time
+  features:
+    - "Everything in Pro"
+    - "Lifetime updates"
+```
+
+```yaml
+# db/reference_data/roles.yml
+#
+# Staff roles with permission levels.
+
+- key: super_admin
+  name: Super Admin
+  can_manage_staff: true
+  can_manage_billing: true
+  can_export_data: true
+
+- key: admin
+  name: Admin
+  can_manage_staff: false
+  can_manage_billing: true
+  can_export_data: true
+
+- key: support
+  name: Support
+  can_manage_staff: false
+  can_manage_billing: false
+  can_export_data: false
+```
+
+#### Loader Module
+
+```ruby
+# lib/reference_data.rb
+#
+# Loads YAML files from db/reference_data/ into the database.
+# Called on app boot via initializer. Idempotent — safe to run repeatedly.
+
+module ReferenceData
+  class << self
+    def load_all!
+      Dir[Rails.root.join("db/reference_data/*.yml")].sort.each do |file|
+        load_file!(file)
+      end
+    end
+
+    def load_file!(path)
+      filename = File.basename(path, ".yml")
+      model_class = filename.classify.constantize
+      records = YAML.load_file(path, permitted_classes: [Symbol]) || []
+
+      records.each do |attrs|
+        attrs = attrs.deep_symbolize_keys
+        key = attrs.delete(:key) || raise("Missing 'key' in #{path}")
+
+        record = model_class.find_or_initialize_by(key: key)
+        record.assign_attributes(attrs)
+        record.save!
+      end
+
+      Logs.info("ReferenceData", "Loaded #{records.size} #{filename}")
+    end
+
+    # Export current DB state back to YAML (for syncing from production)
+    def export!(model_class, path: nil)
+      path ||= Rails.root.join("db/reference_data/#{model_class.table_name}.yml")
+      records = model_class.order(:key).map do |record|
+        attrs = record.attributes.except("id", "created_at", "updated_at")
+        attrs.deep_stringify_keys
+      end
+
+      File.write(path, records.to_yaml)
+      Logs.info("ReferenceData", "Exported #{records.size} to #{path}")
+    end
+  end
+end
+```
+
+#### Initializer (Auto-Load on Boot)
+
+```ruby
+# config/initializers/reference_data.rb
+#
+# Load reference data on every app boot — development, test, and production.
+# Runs after database connection is established.
+
+Rails.application.config.after_initialize do
+  if ActiveRecord::Base.connection.data_source_exists?("plans")
+    ReferenceData.load_all!
+  end
+rescue ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid
+  # Skip during db:create or when tables don't exist yet
+  Logs.warn("ReferenceData", "Skipped — database not ready")
+end
+```
+
+#### Model Requirements
+
+Each reference data model needs a `key` column as the unique lookup field:
+
+```ruby
+# Migration
+class CreatePlans < ActiveRecord::Migration[7.1]
+  def change
+    create_table :plans do |t|
+      t.string :key, null: false, index: { unique: true }
+      t.string :name, null: false
+      t.string :stripe_price_id
+      t.integer :amount_cents, null: false, default: 0
+      t.string :interval
+      t.jsonb :features, null: false, default: []
+      t.timestamps
+    end
+  end
+end
+
+# Model
+class Plan < ApplicationRecord
+  validates :key, presence: true, uniqueness: true
+  validates :name, presence: true
+
+  # Access by key
+  class << self
+    def free = find_by!(key: "free")
+    def pro = find_by!(key: "pro")
+    def lifetime = find_by!(key: "lifetime")
+  end
+end
+```
+
+#### Rake Tasks
+
+```ruby
+# lib/tasks/reference_data.rake
+
+namespace :reference_data do
+  desc "Load all reference data from YAML files"
+  task load: :environment do
+    ReferenceData.load_all!
+  end
+
+  desc "Export a model's current data to YAML (for syncing from production)"
+  task :export, [:model] => :environment do |_t, args|
+    model_class = args[:model].classify.constantize
+    ReferenceData.export!(model_class)
+    puts "Exported to db/reference_data/#{model_class.table_name}.yml"
+  end
+end
+```
+
+Usage:
+
+```bash
+# Manually reload reference data (usually not needed — happens on boot)
+bin/rails reference_data:load
+
+# Export current Plan records to YAML (run in production via kamal exec)
+bin/rails reference_data:export[Plan]
+
+# Then copy the YAML from production to your repo and commit
+kamal app exec "cat db/reference_data/plans.yml" > db/reference_data/plans.yml
+```
+
+#### Test Configuration (DatabaseCleaner)
+
+Reference data must survive between tests. Configure DatabaseCleaner to use **transactions** (default) which automatically preserves reference data, or if you must use truncation, exclude reference tables:
+
+```ruby
+# spec/support/database_cleaner.rb
+
+RSpec.configure do |config|
+  config.before(:suite) do
+    # Ensure reference data is loaded before any tests run
+    ReferenceData.load_all!
+  end
+
+  config.use_transactional_fixtures = true
+
+  # If you need truncation for specific tests (e.g., system tests),
+  # exclude reference data tables:
+  #
+  # config.before(:each, type: :system) do
+  #   DatabaseCleaner.strategy = :truncation, {
+  #     except: %w[plans roles categories]  # reference data tables
+  #   }
+  # end
+end
+```
+
+#### Syncing Production Changes
+
+When a staff user creates/updates reference data via the admin UI (e.g., adds a new plan):
+
+1. **Export from production:**
+   ```bash
+   kamal app exec -i "bin/rails reference_data:export[Plan]"
+   kamal app exec "cat db/reference_data/plans.yml"
+   ```
+
+2. **Copy to your repo** — paste into `db/reference_data/plans.yml`
+
+3. **Commit and deploy** — now all environments have the new data
+
+This keeps YAML files as the source of truth while allowing production edits when needed.
+
+#### Rules
+
+- **Every reference data model has a `key` column.** This is the stable, human-readable identifier used for lookups. Never use the `id` column as a reference — IDs vary across environments.
+- **YAML files are the source of truth.** Production can be updated first, but always export and commit changes back to the repo.
+- **Never delete reference data rows.** Add a `deprecated` or `archived` flag instead. Existing records may reference them.
+- **Loads on every boot.** The initializer runs on server start, console, rake tasks — everywhere.
+- **Tests rely on it.** `Plan.pro` just works in specs without any `let` or `create` setup.
+- **No FFaker, no randomness.** This is deterministic configuration, not test data.
+
+### Development Seed Data
+
+Separate from production seeds. This is a **manual** rake task that populates your development database with rich, realistic data so you can launch the app and explore every feature visually.
+
+```bash
+bin/rails dev:seed
+```
+
+**Structure:** A rake task that loads numbered files from `db/dev_seeds/`:
+
+```ruby
+# lib/tasks/dev_seeds.rake
+namespace :dev do
+  desc "Seed development database with realistic sample data"
+  task seed: :environment do
+    abort("This task is only for development!") unless Rails.env.development?
+
+    puts "Seeding development data..."
+    Dir[Rails.root.join("db/dev_seeds/*.rb")].sort.each do |f|
+      puts "  Loading #{File.basename(f)}..."
+      load f
+    end
+    puts "Done!"
+  end
+end
+```
+
+**Helper — `seed_record`:** Use this instead of raw `find_or_create_by`. It finds or initializes by the lookup key, then **always updates** all attributes — so changing a value in the seed file and re-running applies the change.
+
+```ruby
+# db/dev_seeds/00_helpers.rb
+#
+# Loaded first (sorted by filename). Defines helpers used by all seed files.
+
+def seed_record(klass, find_by, attributes = {})
+  record = klass.find_or_initialize_by(find_by)
+  record.assign_attributes(attributes)
+  record.save!
+  record
+end
+```
+
+Usage:
+
+```ruby
+# find_by key       attrs that get updated on every run
+seed_record(User, { email_address: "dev@example.com" }, { name: "Dev User", password: "password123" })
+```
+
+If you change `name: "Dev User"` to `name: "Dev Admin"` and re-run, the existing record gets updated.
+
+**Example files:**
+
+```ruby
+# db/dev_seeds/01_users.rb
+#
+# Creates users covering every type and state:
+# - Regular free users
+# - Paid users (one per plan)
+# - Comped/gifted users
+# - Suspended users
+# - Users with unverified emails
+# - Users who signed up via Google OAuth
+
+# A known user you can always sign in with
+seed_record(User,
+  { email_address: "dev@example.com" },
+  { name: "Dev User", password: "password123" })
+
+# Batch of diverse users
+20.times do |i|
+  seed_record(User,
+    { email_address: "user#{i}@example.com" },
+    { name: FFaker::Name.name, password: "password123" })
+end
+
+# Suspended user
+seed_record(User,
+  { email_address: "suspended@example.com" },
+  { name: "Suspended User", password: "password123",
+    suspended_at: 3.days.ago, suspended_reason: "Terms of service violation" })
+
+# Comped user
+seed_record(User,
+  { email_address: "comped@example.com" },
+  { name: "Comped User", password: "password123", comped: true })
+
+puts "    Created #{User.count} users"
+```
+
+```ruby
+# db/dev_seeds/02_staff.rb
+#
+# Staff accounts — use the same dev user for easy access
+
+dev_user = User.find_by!(email_address: "dev@example.com")
+seed_record(Staff, { user: dev_user }, { role: "super_admin" })
+
+# Additional staff member
+seed_record(User,
+  { email_address: "staff@example.com" },
+  { name: "Staff Member", password: "password123" })
+staff_user = User.find_by!(email_address: "staff@example.com")
+seed_record(Staff, { user: staff_user }, { role: "staff" })
+
+puts "    Created #{Staff.count} staff members"
+```
+
+```ruby
+# db/dev_seeds/03_contact_requests.rb
+#
+# Mix of read and unread contact requests
+
+8.times do |i|
+  seed_record(ContactRequest,
+    { email: "contact#{i}@example.com" },
+    { name: FFaker::Name.name,
+      message: FFaker::Lorem.paragraph,
+      read_at: i < 6 ? nil : Time.current })  # first 6 unread, last 2 read
+end
+
+puts "    Created #{ContactRequest.count} contact requests"
+```
+
+```ruby
+# db/dev_seeds/04_announcements.rb
+#
+# Active, scheduled, and expired announcements
+
+[
+  { title: "Welcome to the beta!", body: "Thanks for being an early user.",
+    style: "info", starts_at: 1.week.ago, ends_at: 1.month.from_now, dismissible: true },
+  { title: "Scheduled maintenance", body: "We'll be down briefly on Saturday.",
+    style: "warning", starts_at: 3.days.from_now, ends_at: 4.days.from_now, dismissible: false },
+  { title: "Old announcement", body: "This one has expired.",
+    style: "info", starts_at: 2.months.ago, ends_at: 1.month.ago, dismissible: true },
+].each do |attrs|
+  seed_record(Announcement, { title: attrs[:title] }, attrs.except(:title))
+end
+
+puts "    Created #{Announcement.count} announcements"
+```
+
+Adapt the examples above to your project's actual models. The key is **covering every meaningful state and combination**, not just happy paths.
+
+**Rules:**
+
+- **Truly idempotent — update on re-run.** Use the `seed_record` helper (defined in `00_helpers.rb`). It does `find_or_initialize_by` on a stable key, then `assign_attributes` + `save!` — so changing a value in the seed file and re-running **updates** the existing record. Never use `find_or_create_by` with a block (the block only runs on create, not on subsequent runs).
+- **FFaker for bulk data, explicit values for special cases.** The "suspended user" needs a specific email you can find; the 20 regular users use FFaker.
+- **One file per domain area.** Numbered for dependency order (users before staff, plans before subscriptions).
+- **Print counts.** Each file prints what it created so you can verify at a glance.
+- **Keep a known login.** Always create `dev@example.com` / `password123` so you have a predictable way to sign in. Make this user a staff/super_admin for easy access to admin features.
+- **Cover every state.** For each model, think: what are the possible statuses, roles, flags, and edge cases? Create at least one record for each.
+- **Must be updated with every new feature.** When you add a new model, add a new dev seed file. When you add a new status or flag to an existing model, add a record with that state. This is part of the feature deliverable, not an afterthought.
+- **Never run in production.** The rake task aborts if not in development.
+- **Separate from `db:seed`.** Production seeds (`db/seeds/`) contain only reference data (plans, roles). Dev seeds (`db/dev_seeds/`) contain sample data for browsing.
 
 ---
 
@@ -1047,9 +1749,10 @@ See the [ESLint + Prettier section in inertia-react.md](inertia-react.md#eslint-
 ## Error Tracking (Sentry)
 
 - **Always configure Sentry** for production error tracking.
+- **Use the `Logs` module** instead of calling `Rails.logger` or `Sentry.*` directly. It tags every message and routes warnings/errors to Sentry automatically.
 - **Filter sensitive params** — never send passwords, tokens, or API keys to Sentry.
 - **Set user context** so errors are attributable.
-- **See [sentry.md](sentry.md) for setup.**
+- **See [sentry.md](sentry.md) for setup and the `Logs` module implementation.**
 
 ---
 

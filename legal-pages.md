@@ -18,7 +18,7 @@ Ask the user:
    - Stripe (payments)
    - Google Analytics
    - Error tracking (Sentry, etc.)
-   - Email service (Resend, etc.)
+   - Email & SMS service (Brevo)
 
 3. **Any special considerations?**
    - GDPR compliance (EU users)?
@@ -64,7 +64,7 @@ end
 ## Privacy Policy Template
 
 ```jsx
-// app/frontend/pages/Pages/Privacy.jsx
+// app/frontend/pages/pages/privacy.jsx
 import { Head } from "@inertiajs/react"
 
 export default function Privacy() {
@@ -136,7 +136,7 @@ export default function Privacy() {
 ## Terms of Service Template
 
 ```jsx
-// app/frontend/pages/Pages/Terms.jsx
+// app/frontend/pages/pages/terms.jsx
 import { Head } from "@inertiajs/react"
 
 export default function Terms() {

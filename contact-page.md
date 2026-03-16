@@ -23,7 +23,7 @@ class CreateContactRequests < ActiveRecord::Migration[x.x]
       t.string :name, null: false
       t.string :email, null: false
       t.text :message, null: false
-      t.string :status, null: false, default: "new"
+      t.integer :status, null: false, default: 0
       t.text :staff_notes
       t.references :user, foreign_key: true  # nullable — guest submissions
       t.references :resolved_by, foreign_key: { to_table: :users }
@@ -43,13 +43,13 @@ end
 # app/models/contact_request.rb
 
 class ContactRequest < ApplicationRecord
-  STATUSES = %w[new in_progress resolved archived].freeze
+  enum :status, { new_request: 0, in_progress: 1, resolved: 2, archived: 3 }
 
   belongs_to :user, optional: true            # submitter (if logged in)
   belongs_to :resolved_by, class_name: "User", optional: true
 
   scope :newest_first, -> { order(created_at: :desc) }
-  scope :unresolved, -> { where(status: %w[new in_progress]) }
+  scope :unresolved, -> { where(status: [:new_request, :in_progress]) }
   scope :by_status, ->(status) { status.present? ? where(status: status) : all }
 end
 ```
@@ -179,13 +179,12 @@ class TelegramNotifier
       response = Net::HTTP.post_form(uri, body)
 
       unless response.is_a?(Net::HTTPSuccess)
-        Rails.logger.error("[TelegramNotifier] Failed to send message: #{response.body}")
+        Logs.error("TelegramNotifier", "Failed to send message: #{response.body}")
       end
 
       response
     rescue StandardError => e
-      Rails.logger.error("[TelegramNotifier] #{e.message}")
-      Sentry.capture_exception(e) if defined?(Sentry)
+      Logs.error("TelegramNotifier", e)
       nil
     end
 
@@ -331,7 +330,7 @@ describe("contactSchema", () => {
 ## React Page (Public)
 
 ```jsx
-// app/frontend/pages/Contact/New.jsx
+// app/frontend/pages/contact/new.jsx
 
 import { Head, useForm, usePage } from "@inertiajs/react";
 import { useTranslation } from "react-i18next";
@@ -476,19 +475,19 @@ module Staff
         filters: { status: params[:status] },
         counts: {
           all: ContactRequest.count,
-          new: ContactRequest.where(status: "new").count,
-          in_progress: ContactRequest.where(status: "in_progress").count,
-          resolved: ContactRequest.where(status: "resolved").count,
+          new_request: ContactRequest.new_request.count,
+          in_progress: ContactRequest.in_progress.count,
+          resolved: ContactRequest.resolved.count,
         },
       }
     end
 
     def show
-      request = ContactRequest.find(params[:id])
+      request = ContactRequest.find_by_slug!(params[:slug])
 
       render inertia: "Staff/ContactRequests/Show", props: {
         contact_request: {
-          id: request.id,
+          slug: request.slug,
           name: request.name,
           email: request.email,
           message: request.message,
@@ -503,7 +502,7 @@ module Staff
     end
 
     def update
-      request = ContactRequest.find(params[:id])
+      request = ContactRequest.find_by_slug!(params[:slug])
 
       result = ContactRequests::Resolve.call(
         contact_request: request,
@@ -540,9 +539,9 @@ end
 ### Staff Frontend: Contact Requests List
 
 ```jsx
-// app/frontend/pages/Staff/ContactRequests/Index.jsx
+// app/frontend/pages/staff/contact-requests/index.jsx
 
-import StaffLayout from "@/layout/StaffLayout";
+import StaffLayout from "@/layout/staff-layout";
 import { Link } from "@inertiajs/react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
@@ -650,9 +649,9 @@ export default function ContactRequestsIndex({ contact_requests, filters, counts
 ### Staff Frontend: Contact Request Detail
 
 ```jsx
-// app/frontend/pages/Staff/ContactRequests/Show.jsx
+// app/frontend/pages/staff/contact-requests/show.jsx
 
-import StaffLayout from "@/layout/StaffLayout";
+import StaffLayout from "@/layout/staff-layout";
 import { useForm } from "@inertiajs/react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
@@ -833,7 +832,7 @@ staff:
 ### Factory
 
 ```ruby
-# spec/factories/contact_requests.rb
+# spec/support/factories/contact_requests.rb
 
 FactoryBot.define do
   factory :contact_request do
@@ -1035,21 +1034,21 @@ RSpec.describe "Staff::ContactRequests", type: :request do
     end
 
     it "filters by status" do
-      get "/staff/contact_requests", params: { status: "new" }
+      get "/staff/contact_requests", params: { status: "new_request" }
       expect(response).to have_http_status(:ok)
     end
   end
 
-  describe "PATCH /staff/contact_requests/:id" do
+  describe "PATCH /staff/contact_requests/:slug" do
     let!(:contact_request) { create(:contact_request) }
 
     it "updates the status" do
-      patch "/staff/contact_requests/#{contact_request.id}", params: {
+      patch "/staff/contact_requests/#{contact_request.slug}", params: {
         status: "resolved",
         staff_notes: "Handled via email"
       }
 
-      expect(contact_request.reload.status).to eq("resolved")
+      expect(contact_request.reload).to be_resolved
       expect(contact_request.resolved_by).to eq(staff_user)
     end
   end

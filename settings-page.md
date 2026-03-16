@@ -191,7 +191,7 @@ end
 ### React Page
 
 ```jsx
-// app/frontend/pages/Settings/Show.jsx
+// app/frontend/pages/settings/show.jsx
 import { Head, useForm, usePage } from "@inertiajs/react"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
@@ -438,6 +438,204 @@ get "billing/portal", to: "billing#portal"
 ```
 
 This lets users manage subscriptions, payment methods, and invoices without you building UI.
+
+---
+
+## Tab-Based Settings (For Complex Apps)
+
+When settings grow beyond a single page, use tab-based routing with separate GET/PATCH per tab:
+
+### Routes
+
+```ruby
+# config/routes.rb
+scope "settings", controller: "settings" do
+  get "/", action: :profile, as: :settings
+  get "profile", action: :profile
+  patch "profile", action: :update_profile
+  get "security", action: :security
+  patch "security", action: :update_security
+  get "notifications", action: :notifications
+  patch "notifications", action: :update_notifications
+end
+```
+
+### Controller
+
+```ruby
+# app/controllers/settings_controller.rb
+class SettingsController < ApplicationController
+  def profile
+    render_tab("Profile", user_props)
+  end
+
+  def update_profile
+    perform_update(:profile, profile_params)
+  end
+
+  def security
+    render_tab("Security", { password_user: Current.user.password_user? })
+  end
+
+  def update_security
+    perform_update(:security, security_params)
+  end
+
+  private
+
+  def render_tab(name, extra_props = {})
+    render inertia: "Settings/#{name}", props: base_props.merge(extra_props)
+  end
+
+  def perform_update(tab, params)
+    result = Settings::Update.call(user: Current.user, tab: tab, params: params)
+
+    if result.success?
+      redirect_to settings_path, notice: I18n.t("settings.#{tab}_updated")
+    else
+      redirect_back fallback_location: settings_path, alert: result.error
+    end
+  end
+
+  def base_props
+    { routes: settings_routes }
+  end
+
+  def settings_routes
+    {
+      profile: settings_profile_path,
+      security: settings_security_path,
+      notifications: settings_notifications_path,
+    }
+  end
+end
+```
+
+### Unified Update Interactor
+
+```ruby
+# app/interactors/settings/update.rb
+class Settings::Update
+  include Interactor
+
+  delegate :user, :tab, :params, to: :context
+
+  def call
+    case tab
+    when :profile then update_profile
+    when :security then update_security
+    when :notifications then update_notifications
+    else context.fail!(error: "Unknown settings tab")
+    end
+  end
+
+  private
+
+  def update_profile
+    unless user.update(params)
+      context.fail!(error: user.errors.full_messages.first)
+    end
+  end
+
+  def update_security
+    # Verify current password for password users
+    if user.password_user? && !user.authenticate(params[:current_password])
+      context.fail!(error: I18n.t("settings.current_password_invalid"))
+      return
+    end
+
+    unless user.update(password: params[:new_password])
+      context.fail!(error: user.errors.full_messages.first)
+    end
+  end
+
+  def update_notifications
+    # Handle notification preferences update
+  end
+end
+```
+
+### Settings Layout Component
+
+```jsx
+// app/frontend/layout/settings-layout.jsx
+import { Link, usePage } from "@inertiajs/react";
+import { cn } from "@/lib/utils";
+
+const tabs = [
+  { key: "profile", label: "Profile" },
+  { key: "security", label: "Security" },
+  { key: "notifications", label: "Notifications" },
+];
+
+export function SettingsLayout({ children }) {
+  const { routes, url } = usePage().props;
+
+  return (
+    <div className="max-w-4xl mx-auto py-8 px-4">
+      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <div className="flex gap-8">
+        <nav className="w-48 space-y-1">
+          {tabs.map((tab) => (
+            <Link
+              key={tab.key}
+              href={routes[tab.key]}
+              className={cn(
+                "block px-3 py-2 rounded-md text-sm",
+                url.includes(tab.key)
+                  ? "bg-secondary font-medium"
+                  : "hover:bg-muted"
+              )}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="flex-1">{children}</div>
+      </div>
+    </div>
+  );
+}
+```
+
+### OAuth vs Password User Distinction
+
+Adapt security settings based on how the user signed up:
+
+```jsx
+// app/frontend/pages/settings/security.jsx
+export default function Security({ password_user }) {
+  const { t } = useTranslation();
+
+  if (!password_user) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.security.title")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">
+            {t("settings.security.oauth_only")}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      {/* Password change form for password users */}
+    </Card>
+  );
+}
+```
+
+```yaml
+# i18n
+settings:
+  security:
+    oauth_only: You signed up with Google. Password management is not available.
+```
 
 ---
 

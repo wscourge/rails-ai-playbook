@@ -24,13 +24,13 @@ gem "sentry-rails"
 ```ruby
 # config/initializers/sentry.rb
 Sentry.init do |config|
-  config.dsn = ENV["SENTRY_DSN"]
+  config.dsn = SentryConfig.dsn
   config.breadcrumbs_logger = [:active_support_logger, :http_logger]
 
-  config.enabled_environments = %w[production]
+  config.enabled_environments = SentryConfig.enabled_environments
 
   # Performance monitoring (adjust sample rate as needed)
-  config.traces_sample_rate = 0.1  # 10% of transactions
+  config.traces_sample_rate = SentryConfig.traces_sample_rate
 
   # Filter sensitive data
   config.before_send = lambda do |event, _hint|
@@ -44,6 +44,8 @@ Sentry.init do |config|
   config.release = ENV.fetch("APP_VERSION", "unknown")
 end
 ```
+
+See [anyway-config.md](anyway-config.md) for the `SentryConfig` class definition.
 
 ### User Context
 
@@ -85,6 +87,121 @@ Sentry.capture_message("Unexpected state: order #{order.id} has no items", level
 ### Background Jobs (Solid Queue)
 
 Sentry automatically captures errors from Active Job / Solid Queue. No extra config needed — `sentry-rails` hooks into the job processor.
+
+---
+
+## Logs Module
+
+A thin wrapper around `Rails.logger` that adds **structured tags** and optional **Sentry context** to every log call. Use `Logs` everywhere instead of calling `Rails.logger` directly.
+
+### Why
+
+- **Consistent tagging** — every message is prefixed with a source tag (e.g. `[Payments]`, `[ReferenceData]`), making it trivial to grep production logs.
+- **Sentry in one place** — errors and warnings can automatically push context or capture messages/exceptions to Sentry without sprinkling `Sentry.*` calls throughout the codebase.
+- **Single interface** — swap the underlying logger, add JSON formatting, or route to a log drain later without touching application code.
+
+### Implementation
+
+```ruby
+# app/models/logs.rb
+#
+# Thin, backend-wide logging façade.
+#
+#   Logs.info("Payments", "Charge succeeded", charge_id: "ch_123")
+#   Logs.error("Mailer", error, user_id: user.id)
+#
+# Every method accepts:
+#   tag     – short string used as a log prefix, e.g. "Payments"
+#   message – a String description  **or**  an Exception
+#   context – optional keyword args attached as Sentry extra data
+#
+class Logs
+  LEVELS = %i[debug info warn error fatal].freeze
+
+  class << self
+    LEVELS.each do |level|
+      # Logs.info("Tag", "message", key: "val")
+      # Logs.error("Tag", exception, key: "val")
+      define_method(level) do |tag, message, **context|
+        dispatch(level, tag, message, **context)
+      end
+    end
+
+    private
+
+    def dispatch(level, tag, message, **context)
+      is_exception = message.is_a?(Exception)
+      text = is_exception ? "#{message.class}: #{message.message}" : message.to_s
+
+      # ── Rails logger ──
+      Rails.logger.tagged(tag) { Rails.logger.public_send(level, text) }
+
+      # ── Sentry (only when available and initialized) ──
+      return unless defined?(Sentry) && Sentry.initialized?
+
+      extra = context.merge(_tag: tag)
+
+      if is_exception
+        Sentry.capture_exception(message, extra: extra) if capture_level?(level)
+      elsif capture_level?(level)
+        Sentry.capture_message("[#{tag}] #{text}", level: level, extra: extra)
+      else
+        Sentry.configure_scope do |scope|
+          scope.set_context("logs", extra.merge(message: text))
+        end
+      end
+    end
+
+    # Only push to Sentry for warn / error / fatal
+    def capture_level?(level)
+      %i[warn error fatal].include?(level)
+    end
+  end
+end
+```
+
+### Usage
+
+```ruby
+# Simple info — logged and tagged, no Sentry event
+Logs.info("Payments", "Charge succeeded", charge_id: charge.id)
+
+# Warning — logged + Sentry message
+Logs.warn("ReferenceData", "Skipped — database not ready")
+
+# Error with exception — logged + Sentry.capture_exception
+begin
+  risky_operation
+rescue StandardError => e
+  Logs.error("Checkout", e, user_id: user.id, cart_total: cart.total)
+end
+
+# Debug — logged only, never hits Sentry
+Logs.debug("Cache", "Warm-up complete", keys: 42)
+```
+
+### Testing
+
+```ruby
+RSpec.describe Logs do
+  it "delegates to Rails.logger" do
+    expect(Rails.logger).to receive(:info).with("Charge OK")
+    Logs.info("Pay", "Charge OK")
+  end
+
+  it "captures exceptions to Sentry" do
+    error = StandardError.new("boom")
+    expect(Sentry).to receive(:capture_exception).with(error, extra: hash_including(_tag: "Pay"))
+    Logs.error("Pay", error)
+  end
+
+  it "does not send debug/info to Sentry" do
+    expect(Sentry).not_to receive(:capture_message)
+    expect(Sentry).not_to receive(:capture_exception)
+    Logs.info("Tag", "just a message")
+  end
+end
+```
 
 ---
 
@@ -134,7 +251,7 @@ export default Sentry;
 ### Error Boundary
 
 ```jsx
-// app/frontend/components/ErrorBoundary.jsx
+// app/frontend/components/error-boundary.jsx
 import * as Sentry from "@sentry/react";
 import { useTranslation } from "react-i18next";
 
