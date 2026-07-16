@@ -215,15 +215,19 @@ When a terminal command output is not accessible, use the `./tmp/commands-output
 
 When implementing a feature, follow this structure:
 
-1. **Plan** — Break the feature into small, concrete implementation steps. Write them to `docs/ROADMAP.md` (or confirm they're already there). Mark items `[ ]` as you plan, `[x]` as you complete them.
+1. **Open an issue + plan** — Create a GitHub Issue for the workstream (`gh issue create`, label `owner: eng`). Break the feature into small, concrete implementation steps in `docs/ROADMAP.md` (or confirm they're already there), linked from the issue. Mark items `[ ]` as you plan, `[x]` as you complete them.
 
-2. **Implement** — Work through steps one at a time. Commit after each logical chunk. Keep `docs/ROADMAP.md` updated as you go.
+2. **Implement** — Work through steps one at a time. Commit after each logical chunk. Keep `docs/ROADMAP.md` and the issue updated as you go.
 
 3. **Test the feature** — Write tests for the new functionality. Run them and confirm they pass.
 
 4. **Verify existing tests** — Run the full test suite (`bundle exec rspec` for Ruby, `bun test` for JS) to ensure nothing broke.
 
-Only mark a feature complete when all four steps are done.
+5. **Resolve** — Merge to `main` locally (no PRs) and close the issue: `Closes #N` in the merging commit, or `gh issue close N --comment "shipped in <sha>"`.
+
+Only mark a feature complete when all five steps are done.
+
+**Human-only steps** (web consoles, account/property creation, credentials, store/legal agreements, spend decisions) never hide in a checklist or mixed issue: each becomes its own `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to the "Manual, by Human" project (`gh project item-add 9 --owner wscourge --url <issue-url>`). See the playbook's `github-workflow.md`.
 ```
 
 ---

@@ -13,11 +13,12 @@
 1. **Interview me first** - Ask about the project, brand, and requirements before writing code (new projects only)
 2. **Create project docs** - Set up `docs/` folder with DESIGN.md, CODE_QUALITY.md, TESTING.md, etc.
 3. **Keep CLAUDE.md clean** - Brief index that links to detailed docs
-4. **Keep docs/ROADMAP.md current** - Mark items complete as you finish them, add new items as they emerge. This is the source of truth for project progress.
-5. **Use .env files** - All secrets via `ENV["X"]`, never hardcode
-6. **Stripe CLI only** - Create products/prices via CLI, not dashboard
-7. **Use `./tmp/commands-output/` for scratch files** - When redirecting command output to a file (e.g. because the terminal doesn't show it), always write to the project's `./tmp/commands-output/` directory, never to `/tmp`
-8. **Small tasks** - Prefer 30-90 minute chunks, suggest splits if scope creeps
+4. **Track work in GitHub Issues** - Every workstream gets an issue at the start, closed when its work merges to `main` (no PRs — local merge). Plan/roadmap files are the spec behind the issue, kept current with `[ ]`/`[x]` as you go. See [github-workflow.md](github-workflow.md).
+5. **Human-only steps go to the "Manual, by Human" project** - Any step needing the owner personally (web consoles, account/property creation, credentials, store/legal agreements, spend decisions) becomes its own `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to [Manual, by Human](https://github.com/users/wscourge/projects/9). Never bury one in a checklist. See [github-workflow.md](github-workflow.md).
+6. **Use .env files** - All secrets via `ENV["X"]`, never hardcode
+7. **Stripe CLI only** - Create products/prices via CLI, not dashboard
+8. **Use `./tmp/commands-output/` for scratch files** - When redirecting command output to a file (e.g. because the terminal doesn't show it), always write to the project's `./tmp/commands-output/` directory, never to `/tmp`
+9. **Small tasks** - Prefer 30-90 minute chunks, suggest splits if scope creeps
 
 ---
 
@@ -541,6 +542,7 @@ Use it for:
 | [stripe-payments.md](stripe-payments.md) | Stripe CLI workflow + Pay gem |
 | [inertia-react.md](inertia-react.md) | Vite + React + shadcn + inertia_share + frontend philosophy |
 | [kamal-deploy.md](kamal-deploy.md) | Deployment, GitHub Actions CI/CD, secrets management |
+| [github-workflow.md](github-workflow.md) | Issue tracking, `owner:` labels, the "Manual, by Human" queue |
 | [env-template.md](env-template.md) | Required environment variables |
 | [project-structure.md](project-structure.md) | Templates for project docs |
 | [code-quality.md](code-quality.md) | General code quality rules (copy to project docs/) |
