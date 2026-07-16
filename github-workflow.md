@@ -33,8 +33,8 @@ projects follows this; copy the relevant parts into each repo's `AGENTS.md` /
 
 ### 2. Human work goes to the "Manual, by Human" project — always
 
-**[Manual, by Human](https://github.com/users/wscourge/projects/9)** (user
-project `9`, owner `wscourge`) is the single cross-repo queue I check for
+**[Manual, by Human](https://github.com/users/wscourge/projects/10)** (user
+project `10`, owner `wscourge`) is the single cross-repo queue I check for
 pending manual work. If a human-action item is not in that project, I will
 miss it — so agents must never bury one in a plan file, a checklist, a commit
 message, or a mixed issue.
@@ -47,10 +47,10 @@ gh issue create --repo wscourge/<repo> \
   --title "[Manual] <what the human must do>" \
   --assignee wscourge --label "owner: user" \
   --body "<exact console URLs, step-by-step actions, and what it unblocks>"
-gh project item-add 9 --owner wscourge --url <created-issue-url>
+gh project item-add 10 --owner wscourge --url <created-issue-url>
 ```
 
-- Assignee `wscourge` + label `owner: user` + project 9 — **all three, every
+- Assignee `wscourge` + label `owner: user` + project 10 — **all three, every
   time**.
 - One issue per coherent manual task. The body always gives exact console
   URLs, concrete steps, and **what it unblocks**.
