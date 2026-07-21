@@ -227,7 +227,7 @@ When implementing a feature, follow this structure:
 
 Only mark a feature complete when all five steps are done.
 
-**Human-only steps** (web consoles, account/property creation, credentials, store/legal agreements, spend decisions) never hide in a checklist or mixed issue: each becomes its own `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to the "Manual, by Human" project (`gh project item-add 10 --owner wscourge --url <issue-url>`). See the playbook's `github-workflow.md`.
+**Human-only steps** (web consoles, account/property creation, credentials, store/legal agreements, spend decisions) never hide in a checklist or mixed issue: each becomes its own `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to this repo's own "Manual, by Human — <App>" project (`gh project item-add <N> --owner wscourge --url <issue-url>`; the number lives in the repo's AGENTS.md). See the playbook's `github-workflow.md`.
 ```
 
 ---

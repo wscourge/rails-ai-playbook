@@ -14,7 +14,7 @@
 2. **Create project docs** - Set up `docs/` folder with DESIGN.md, CODE_QUALITY.md, TESTING.md, etc.
 3. **Keep CLAUDE.md clean** - Brief index that links to detailed docs
 4. **Track work in GitHub Issues** - Every workstream gets an issue at the start, closed when its work merges to `main` (no PRs — local merge). Plan/roadmap files are the spec behind the issue, kept current with `[ ]`/`[x]` as you go. See [github-workflow.md](github-workflow.md).
-5. **Human-only steps go to the "Manual, by Human" project** - Any step needing the owner personally (web consoles, account/property creation, credentials, store/legal agreements, spend decisions) becomes its own `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to [Manual, by Human](https://github.com/users/wscourge/projects/10). Never bury one in a checklist. See [github-workflow.md](github-workflow.md).
+5. **Human-only steps go to the repo's "Manual, by Human" project** - Any step needing the owner personally (web consoles, account/property creation, credentials, store/legal agreements, spend decisions) becomes its own `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to the repo's own "Manual, by Human — <App>" project (mapping + commands in [github-workflow.md](github-workflow.md)). Never bury one in a checklist.
 6. **Use .env files** - All secrets via `ENV["X"]`, never hardcode
 7. **Stripe CLI only** - Create products/prices via CLI, not dashboard
 8. **Use `./tmp/commands-output/` for scratch files** - When redirecting command output to a file (e.g. because the terminal doesn't show it), always write to the project's `./tmp/commands-output/` directory, never to `/tmp`

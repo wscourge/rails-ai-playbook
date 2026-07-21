@@ -111,7 +111,7 @@ If the app needs mobile distribution, wrap the web app with **Capacitor**:
 1. **Initialize the repo first** — run `git init` and set the default branch to `main` before creating any files
 2. **Commit after each step** — when you finish a step, commit all changes before moving to the next one
 3. Follow the [Conventional Commits](_PLAYBOOK_EXISTING_PROJECT.md#git) format for all commit messages (e.g. `chore: scaffold project structure`, `feat(auth): add Rails authentication`)
-4. **As soon as the GitHub repo exists**, seed the `owner:` labels and switch to issue-tracked work per [github-workflow.md](github-workflow.md) — every workstream gets an issue, closed on merge to `main` (no PRs); every human/console step gets a `[Manual]` issue routed to the [Manual, by Human](https://github.com/users/wscourge/projects/10) project
+4. **As soon as the GitHub repo exists**, seed the `owner:` labels, create + link the repo's "Manual, by Human — <App>" project, and switch to issue-tracked work per [github-workflow.md](github-workflow.md) — every workstream gets an issue, closed on merge to `main` (no PRs); every human/console step gets a `[Manual]` issue routed to that project
 
 ---
 
@@ -288,7 +288,7 @@ See [code-quality.md](code-quality.md#development-seed-data) for the full struct
 
 When the app is ready for production, follow this checklist **in order**. Each sub-step links to the detailed doc. Skip items marked *(if applicable)* when the feature isn't used.
 
-> **Manual steps become issues.** Nearly every checkbox below that involves a web console, account creation, or credential minting is work only the human owner can do. Per [github-workflow.md](github-workflow.md), mirror each such pending step as a `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to the [Manual, by Human](https://github.com/users/wscourge/projects/10) project — so none of them get lost in this checklist.
+> **Manual steps become issues.** Nearly every checkbox below that involves a web console, account creation, or credential minting is work only the human owner can do. Per [github-workflow.md](github-workflow.md), mirror each such pending step as a `[Manual]` issue — assigned `wscourge`, labeled `owner: user`, added to the repo's own "Manual, by Human — <App>" project — so none of them get lost in this checklist.
 
 ### 5.1 — Infrastructure (Hetzner + Docker)
 

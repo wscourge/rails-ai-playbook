@@ -31,13 +31,21 @@ projects follows this; copy the relevant parts into each repo's `AGENTS.md` /
   Never close an issue whose work hasn't merged; never leave a merged issue
   open.
 
-### 2. Human work goes to the "Manual, by Human" project — always
+### 2. Human work goes to the repo's "Manual, by Human" project — always
 
-**[Manual, by Human](https://github.com/users/wscourge/projects/10)** (user
-project `10`, owner `wscourge`) is the single cross-repo queue I check for
-pending manual work. If a human-action item is not in that project, I will
-miss it — so agents must never bury one in a plan file, a checklist, a commit
-message, or a mixed issue.
+**Each repo has its own "Manual, by Human — <App>" project** (a user project
+owned by `wscourge`, linked to the repo so it shows in the repo's Projects
+tab). It is the queue I check for that app's pending manual work. If a
+human-action item is not in the repo's project, I will miss it — so agents
+must never bury one in a plan file, a checklist, a commit message, or a mixed
+issue.
+
+Current mapping (each repo's `AGENTS.md` states its own number):
+
+| Repo | Project |
+|------|---------|
+| `wscourge/bosko` | [Manual, by Human — Bosko](https://github.com/users/wscourge/projects/10) (`10`) |
+| `wscourge/livingquran` | [Manual, by Human — Living Quran](https://github.com/users/wscourge/projects/12) (`12`) |
 
 The moment a human-only step surfaces, split it into its own issue and route
 it there:
@@ -47,11 +55,12 @@ gh issue create --repo wscourge/<repo> \
   --title "[Manual] <what the human must do>" \
   --assignee wscourge --label "owner: user" \
   --body "<exact console URLs, step-by-step actions, and what it unblocks>"
-gh project item-add 10 --owner wscourge --url <created-issue-url>
+gh project item-add <repo's project number> --owner wscourge --url <created-issue-url>
 ```
 
-- Assignee `wscourge` + label `owner: user` + project 10 — **all three, every
-  time**.
+- Assignee `wscourge` + label `owner: user` + the repo's Manual project —
+  **all three, every time**. Never file an issue from one repo into another
+  repo's Manual project.
 - One issue per coherent manual task. The body always gives exact console
   URLs, concrete steps, and **what it unblocks**.
 - Agent-doable work never goes into that project.
@@ -79,6 +88,13 @@ gh label create "owner: either" --repo wscourge/<repo> --color FBCA04 \
   --description "Human or agent can do it"
 ```
 
-No new per-repo project is needed for human work — "Manual, by Human" is
-user-level and spans all repos. Per-initiative projects for agent work are
-optional; the issues themselves are the tracking that matters.
+Then create the repo's Manual queue and link it (and record the number in the
+repo's `AGENTS.md` and the mapping table above):
+
+```bash
+gh project create --owner wscourge --title "Manual, by Human — <App>"
+gh project link <number> --owner wscourge --repo wscourge/<repo>
+```
+
+Per-initiative projects for agent work are optional; the issues themselves are
+the tracking that matters.
